@@ -1,0 +1,628 @@
+﻿import { useState, useCallback, useEffect, useMemo } from 'react'
+
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+   Constants
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+const MAX_TOKENS = 25
+const TOKEN_NUMS = Array.from({ length: MAX_TOKENS }, (_, i) => i + 1)
+
+/* eslint-disable-next-line react-refresh/only-export-components */
+export const MENU_ITEMS = [
+  // â”€â”€ Pizza Menu â”€â”€
+  { id: 1,  name: 'Onion Pizza',                              price: 89.00,  img: '/images/onion-pizza.jpg', category: 'Pizza' },
+  { id: 2,  name: 'Baby-Corn Pizza',                          price: 149.00, img: '/images/baby-corn-pizza.jpg', category: 'Pizza' },
+  { id: 3,  name: 'Farm House Pizza',                         price: 159.00, img: '/images/farm-house-pizza.jpg', category: 'Pizza' },
+  { id: 4,  name: 'Golden Corn Pizza',                        price: 109.00, img: '/images/golden-corn-pizza.jpg', category: 'Pizza' },
+  { id: 5,  name: 'BBQ Special Pizza',                        price: 179.00, img: '/images/bbq-special-pizza.jpg', category: 'Pizza' },
+  { id: 6,  name: 'Videshi Paneer Makhani Pizza',             price: 139.00, img: '/images/videshi-paneer-makhani-pizza.jpg', category: 'Pizza' },
+  { id: 7,  name: 'Veggie overload with mint sauchage Pizza', price: 199.00, img: '/images/veggie-overload-with-mint-sauchage-pizza.jpg', category: 'Pizza' },
+  { id: 8,  name: 'Mushroom Pizza',                           price: 149.00, img: '/images/mushroom-pizza.jpg', category: 'Pizza' },
+  { id: 9,  name: 'Magixx Special Pizza',                     price: 249.00, img: '/images/magixx-special-pizza.jpg', category: 'Pizza' },
+  { id: 10, name: 'Extra Cheese',                             price: 20.00,  img: '/images/extra-cheese.jpg', category: 'Pizza' },
+
+  // â”€â”€ Milk Shakes & Mojitos â”€â”€
+  { id: 11, name: 'Black Current Shake',                      price: 69.00,  img: '/images/black-current-shake.jpg', category: 'Milk Shakes & Mojitos' },
+  { id: 12, name: 'Chocolate Shake',                          price: 69.00,  img: '/images/chocolate-shake.jpg', category: 'Milk Shakes & Mojitos' },
+  { id: 13, name: 'Kesar Badam Shake',                        price: 79.00,  img: '/images/kesar-badam-shake.jpg', category: 'Milk Shakes & Mojitos' },
+  { id: 14, name: 'Butterscotch Shake',                       price: 69.00,  img: '/images/butterscotch-shake.jpg', category: 'Milk Shakes & Mojitos' },
+  { id: 15, name: 'Bubblegum Shake',                          price: 79.00,  img: '/images/bubblegum-shake.jpg', category: 'Milk Shakes & Mojitos' },
+  { id: 16, name: 'Oreo Shake',                               price: 79.00,  img: '/images/oreo-shake.jpg', category: 'Milk Shakes & Mojitos' },
+  { id: 17, name: 'Kit-Kat Shake',                            price: 89.00,  img: '/images/kit-kat-shake.jpg', category: 'Milk Shakes & Mojitos' },
+  { id: 18, name: 'Mint Fresh Mojito',                        price: 59.00,  img: '/images/mint-fresh-mojito.jpg', category: 'Milk Shakes & Mojitos' },
+  { id: 19, name: 'Blue Lagoon Mojito',                       price: 59.00,  img: '/images/blue-lagoon-mojito.jpg', category: 'Milk Shakes & Mojitos' },
+  { id: 20, name: 'Orange Punch Mojito',                      price: 59.00,  img: '/images/orange-punch-mojito.jpg', category: 'Milk Shakes & Mojitos' },
+  { id: 21, name: 'Strawberry Shake',                         price: 69.00,  img: '/images/strawberry-shake.jpg', category: 'Milk Shakes & Mojitos' },
+  { id: 22, name: 'Paan Shake',                               price: 99.00,  img: '/images/paan-shake.jpg', category: 'Milk Shakes & Mojitos' },
+
+  // â”€â”€ Sandwiches â”€â”€
+  { id: 23, name: 'Corn Sandwich',                            price: 49.00,  img: '/images/corn-sandwich.jpg', category: 'Sandwiches' },
+  { id: 24, name: 'Veggie Sandwich',                          price: 59.00,  img: '/images/veggie-sandwich.jpg', category: 'Sandwiches' },
+  { id: 25, name: 'Paneer Sandwich',                          price: 69.00,  img: '/images/paneer-sandwich.jpg', category: 'Sandwiches' },
+  { id: 26, name: 'BBQ Cheese Sandwich',                      price: 69.00,  img: '/images/bbq-cheese-sandwich.jpg', category: 'Sandwiches' },
+  { id: 27, name: 'Paneer Cheese Sandwich',                   price: 79.00,  img: '/images/paneer-cheese-sandwich.jpg', category: 'Sandwiches' },
+  { id: 28, name: 'Double Decker Cheese Sandwich',            price: 99.00,  img: '/images/double-decker-cheese-sandwich.jpg', category: 'Sandwiches' },
+
+  // â”€â”€ Special Items â”€â”€
+  { id: 29, name: 'Hot Korean Ramen',                         price: 149.00, img: '/images/hot-korean-ramen.jpg', category: 'Special Items' },
+  { id: 30, name: 'Cottage Cheese Ramen',                     price: 249.00, img: '/images/cottage-cheese-ramen.jpg', category: 'Special Items' },
+  { id: 31, name: 'White Sauce Pasta',                        price: 159.00, img: '/images/white-sauce-pasta.jpg', category: 'Special Items' },
+  { id: 32, name: 'Red Sauce Pasta',                          price: 149.00, img: '/images/red-sauce-pasta.jpg', category: 'Special Items' },
+  { id: 33, name: 'Spaghetti Pasta',                          price: 199.00, img: '/images/spaghetti-pasta.jpg', category: 'Special Items' },
+  { id: 34, name: 'Paneer Cheese Balls (5pcs)',               price: 99.00,  img: '/images/paneer-cheese-balls-5pcs.jpg', category: 'Special Items' },
+  { id: 35, name: 'Corn Chat',                                price: 65.00,  img: '/images/corn-chat.jpg', category: 'Special Items' },
+  { id: 36, name: 'Paneer Lollipop (4 piece)',               price: 99.00,  img: '/images/paneer-lollipop-4-piece.jpg', category: 'Special Items' },
+
+  // â”€â”€ Subway & Hotdog (Extracted from Menu Card) â”€â”€
+  { id: 37, name: 'Classic Subway',                           price: 59.00,  img: '/images/classic-subway.jpg', category: 'Subway & Hotdog' },
+  { id: 38, name: 'Classic Tandoori Subway',                  price: 69.00,  img: '/images/classic-tandoori-subway.jpg', category: 'Subway & Hotdog' },
+  { id: 39, name: 'Mint Paneer Subway',                       price: 89.00,  img: '/images/mint-paneer-subway.jpg', category: 'Subway & Hotdog' },
+  { id: 40, name: 'Paneer Cheese Subway',                    price: 99.00,  img: '/images/paneer-cheese-subway.jpg', category: 'Subway & Hotdog' },
+  { id: 41, name: 'Hot Sauce Subway',                         price: 89.00,  img: '/images/hot-sauce-subway.jpg', category: 'Subway & Hotdog' },
+  { id: 42, name: 'Maxx Subway',                              price: 139.00, img: '/images/maxx-subway.jpg', category: 'Subway & Hotdog' },
+  { id: 43, name: 'Tandoori Sauce',                           price: 10.00,  img: '/images/tandoori-sauce.jpg', category: 'Subway & Hotdog' },
+  { id: 44, name: 'BBQ Sauce',                                price: 10.00,  img: '/images/bbq-sauce.jpg', category: 'Subway & Hotdog' },
+  { id: 45, name: 'Mint Sauce',                               price: 20.00,  img: '/images/mint-sauce.jpg', category: 'Subway & Hotdog' },
+  { id: 46, name: 'Hot Sauce',                                price: 20.00,  img: '/images/hot-sauce.jpg', category: 'Subway & Hotdog' },
+  { id: 47, name: 'Cheese Melt',                              price: 10.00,  img: '/images/cheese-melt.jpg', category: 'Subway & Hotdog' },
+
+  // â”€â”€ Fries & Maggie (Extracted from Menu Card) â”€â”€
+  { id: 48, name: 'Salted Fries',                             price: 49.00,  img: '/images/salted-fries.jpg', category: 'Fries & Maggie' },
+  { id: 49, name: 'Veggie Maggie',                            price: 39.00,  img: '/images/veggie-maggie.jpg', category: 'Fries & Maggie' },
+  { id: 50, name: 'Peri Peri Fries',                          price: 59.00,  img: '/images/peri-peri-fries.jpg', category: 'Fries & Maggie' },
+  { id: 51, name: 'Cheese Maggie',                            price: 49.00,  img: '/images/cheese-maggie.jpg', category: 'Fries & Maggie' },
+  { id: 52, name: 'Cheese Fries',                             price: 69.00,  img: '/images/cheese-fries.jpg', category: 'Fries & Maggie' },
+  { id: 53, name: 'Fries with mint sausage',                 price: 59.00,  img: '/images/fries-with-mint-sausage.jpg', category: 'Fries & Maggie' },
+  { id: 54, name: 'Paneer Cheese Maggie',                    price: 69.00,  img: '/images/paneer-cheese-maggie.jpg', category: 'Fries & Maggie' },
+  { id: 55, name: 'Fried Maggie',                             price: 59.00,  img: '/images/fried-maggie.jpg', category: 'Fries & Maggie' },
+  { id: 56, name: 'Paneer Maggie',                            price: 69.00,  img: '/images/paneer-maggie.jpg', category: 'Fries & Maggie' },
+
+  // â”€â”€ Tea & Coffees (Extracted from Menu Card) â”€â”€
+  { id: 57, name: 'Hazlenut Coffee',                          price: 59.00,  img: '/images/hazlenut-coffee.jpg', category: 'Tea & Coffees' },
+  { id: 58, name: 'Aadark Tea',                               price: 39.00,  img: '/images/aadark-tea.jpg', category: 'Tea & Coffees' },
+  { id: 59, name: 'Lemon Tea',                                price: 39.00,  img: '/images/lemon-tea.jpg', category: 'Tea & Coffees' },
+  { id: 60, name: 'Masala Tea',                               price: 49.00,  img: '/images/masala-tea.jpg', category: 'Tea & Coffees' },
+  { id: 61, name: 'Cold Coffee',                              price: 69.00,  img: '/images/cold-coffee.jpg', category: 'Tea & Coffees' },
+  { id: 62, name: 'Latte Coffee',                             price: 49.00,  img: '/images/latte-coffee.jpg', category: 'Tea & Coffees' },
+  { id: 63, name: 'Cappuccino',                               price: 59.00,  img: '/images/cappuccino.jpg', category: 'Tea & Coffees' },
+  { id: 64, name: 'Coffee',                                   price: 49.00,  img: '/images/latte-coffee.jpg', category: 'Tea & Coffees' },
+
+  // â”€â”€ Breakfast (Extracted from Menu Card) â”€â”€
+  { id: 65, name: 'Plain Paratha',                            price: 25.00,  img: '/images/paratha.jpg', category: 'Breakfast' },
+  { id: 66, name: 'Aloo Paratha',                             price: 30.00,  img: '/images/paratha.jpg', category: 'Breakfast' },
+  { id: 67, name: 'Sattu Paratha',                            price: 30.00,  img: '/images/paratha.jpg', category: 'Breakfast' },
+  { id: 68, name: 'Paneer Paratha',                           price: 35.00,  img: '/images/paratha.jpg', category: 'Breakfast' },
+  { id: 69, name: 'Meal Box 1',                               price: 129.00, img: '/images/meal-box.jpg', category: 'Breakfast' },
+  { id: 70, name: 'Meal Box 2',                               price: 149.00, img: '/images/meal-box.jpg', category: 'Breakfast' },
+  { id: 71, name: 'Paw Bhaji',                                price: 55.00,  img: '/images/paw-bhaji.jpg', category: 'Breakfast' },
+  { id: 72, name: 'Paw Bhaji with Butter',                   price: 65.00,  img: '/images/paw-bhaji.jpg', category: 'Breakfast' },
+  { id: 73, name: 'Paneer Paw Bhaji',                         price: 75.00,  img: '/images/paw-bhaji.jpg', category: 'Breakfast' },
+  { id: 74, name: 'Extra Paw',                                price: 20.00,  img: '/images/paw-bhaji.jpg', category: 'Breakfast' },
+  { id: 75, name: 'English Breakfast',                        price: 179.00, img: '/images/english-breakfast.jpg', category: 'Breakfast' },
+
+  // â”€â”€ Ice Cream (Extracted from Menu Card) â”€â”€
+  { id: 76, name: 'Vanilla (2 scoop)',                        price: 49.00,  img: '/images/vanilla-icecream.jpg', category: 'Ice Cream' },
+  { id: 77, name: 'Vanilla {chocolate syrup and chocochip} (2 scoop)', price: 59.00, img: '/images/vanilla-chocochip-icecream.jpg', category: 'Ice Cream' },
+  { id: 78, name: 'Butterscotch (2 scoop)',                   price: 59.00,  img: '/images/butterscotch-icecream.jpg', category: 'Ice Cream' },
+  { id: 79, name: 'Blackcurrent (2 scoop)',                   price: 59.00,  img: '/images/blackcurrent-icecream.jpg', category: 'Ice Cream' },
+  { id: 80, name: 'Strawberry (2 scoop)',                    price: 59.00,  img: '/images/strawberry-icecream.jpg', category: 'Ice Cream' },
+  { id: 81, name: 'Paan (2 Scoop)',                           price: 69.00,  img: '/images/paan-icecream.jpg', category: 'Ice Cream' },
+  { id: 82, name: 'Bubblegum (2 Scoop)',                      price: 69.00,  img: '/images/bubblegum-icecream.jpg', category: 'Ice Cream' },
+  { id: 83, name: 'Orange (2 scoop)',                         price: 59.00,  img: '/images/orange-icecream.jpg', category: 'Ice Cream' },
+  { id: 84, name: 'Rashmalai (2 scoop)',                      price: 69.00,  img: '/images/rashmalai-icecream.jpg', category: 'Ice Cream' },
+
+  // â”€â”€ Burgers â”€â”€
+  { id: 85, name: 'Aloo Tikki Burger',                        price: 59.00,  img: '/images/aloo-tikki-burger.jpg', category: 'Burgers' },
+  { id: 86, name: 'Double Decker Burger',                     price: 99.00,  img: '/images/double-decker-burger.jpg', category: 'Burgers' },
+  { id: 87, name: 'Paneer Tikki Burger',                      price: 69.00,  img: '/images/paneer-tikki-burger.jpg', category: 'Burgers' },
+  { id: 88, name: 'Double Delux Burger (cheese)',             price: 139.00, img: '/images/double-delux-burger-cheese.jpg', category: 'Burgers' },
+  { id: 89, name: 'BBQ Cheese Burger',                         price: 79.00,  img: '/images/bbq-cheese-burger.jpg', category: 'Burgers' },
+]
+
+
+const SECTION_CATEGORIES = [
+  'Pizza',
+  'Milk Shakes & Mojitos',
+  'Sandwiches',
+  'Special Items',
+  'Subway & Hotdog',
+  'Fries & Maggie',
+  'Tea & Coffees',
+  'Breakfast',
+  'Ice Cream',
+  'Burgers',
+]
+
+const CATEGORIES = ['Show All', ...SECTION_CATEGORIES]
+
+const CATEGORY_EMOJIS = {
+  'Pizza': 'ðŸ•',
+  'Milk Shakes & Mojitos': 'ðŸ§‹',
+  'Sandwiches': 'ðŸ¥ª',
+  'Special Items': 'ðŸ²',
+  'Subway & Hotdog': 'ðŸ¥–',
+  'Fries & Maggie': 'ðŸŸ',
+  'Tea & Coffees': 'â˜•',
+  'Breakfast': 'ðŸ³',
+  'Ice Cream': 'ðŸ¨',
+  'Burgers': 'ðŸ”',
+}
+
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+   Tiny inline SVG helper
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+const Icon = ({ d, size = 16, className = '' }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+    className={className}>
+    <path d={d} />
+  </svg>
+)
+
+const ICON_PLUS   = 'M12 5v14 M5 12h14'
+const ICON_MINUS  = 'M5 12h14'
+const ICON_TRASH  = 'M3 6h18 M8 6V4h8v2 M19 6l-1 14H6L5 6'
+const ICON_NOTE   = 'M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z M14 2v6h6 M12 18v-6 M9 15h6'
+const ICON_QR     = 'M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M17 14h.01 M14 17h3v3h3v-3h-3'
+const ICON_DRAFT  = 'M17 3a2.828 2.828 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z'
+const ICON_TOKEN  = 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2 M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2'
+const ICON_WARN   = 'M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z M12 9v4 M12 17h.01'
+const ICON_EXIT   = 'M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4 M16 17l5-5-5-5 M21 12H9'
+const ICON_PRINT  = 'M6 9V2h12v7 M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2 M6 14h12v8H6z'
+const ICON_CHECK  = 'M20 6L9 17l-5-5'
+const ICON_CLOSE  = 'M18 6L6 18 M6 6l12 12'
+const ICON_CASH   = 'M12 1v22 M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6'
+const ICON_MOBILE = 'M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z'
+const ICON_TAG    = 'M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z M7 7h.01'
+const ICON_EDIT   = 'M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z'
+
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+   Toast notification
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+const Toast = ({ toasts }) => (
+  <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2 pointer-events-none">
+    {toasts.map((t) => (
+      <div
+        key={t.id}
+        className={`flex items-center gap-2.5 rounded-xl px-4 py-3 text-sm font-semibold shadow-lg text-white animate-bounce-in
+          ${t.type === 'success' ? 'bg-green-600' : t.type === 'warning' ? 'bg-yellow-500 text-zinc-900' : t.type === 'info' ? 'bg-blue-600' : 'bg-red-600'}`}
+      >
+        <Icon d={t.type === 'success' ? ICON_CHECK : t.type === 'warning' ? ICON_WARN : ICON_TOKEN} size={15} />
+        {t.msg}
+      </div>
+    ))}
+  </div>
+)
+
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+   Custom Item Modal
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+const CustomItemModal = ({ onClose, onAdd }) => {
+  const [name, setName] = useState('')
+  const [price, setPrice] = useState('')
+
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    const parsedPrice = parseFloat(price)
+    if (!name.trim() || isNaN(parsedPrice) || parsedPrice <= 0) return
+    onAdd(name.trim(), parsedPrice)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div className="w-[360px] rounded-2xl bg-white shadow-2xl overflow-hidden">
+        <div className="flex items-center justify-between bg-yellow-400 px-5 py-4">
+          <div>
+            <h3 className="text-base font-extrabold text-zinc-900">Add Custom Item</h3>
+            <p className="text-xs font-medium text-zinc-700">Enter custom dish name and price</p>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1.5 hover:bg-yellow-500 transition active:scale-95">
+            <Icon d={ICON_CLOSE} size={18} />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          <div>
+            <label className="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-500">Item Name</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Special Extra Cheese"
+              className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3.5 py-2.5 text-sm font-semibold text-gray-900 outline-none focus:border-yellow-400 focus:bg-white transition"
+              autoFocus
+              required
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-500">Price (â‚¹)</label>
+            <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3.5 py-2.5 focus-within:border-yellow-400 focus-within:bg-white transition">
+              <span className="text-sm font-bold text-gray-400">â‚¹</span>
+              <input
+                type="number"
+                step="0.5"
+                min="0.5"
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+                placeholder="0.00"
+                className="flex-1 text-sm font-bold text-gray-900 outline-none bg-transparent"
+                required
+              />
+            </div>
+          </div>
+
+          <div className="flex gap-2 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 rounded-xl border border-gray-200 py-2.5 text-xs font-bold text-gray-600 hover:bg-gray-50 transition active:scale-95"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={!name.trim() || !parseFloat(price) || parseFloat(price) <= 0}
+              className="flex-1 rounded-xl bg-yellow-400 py-2.5 text-xs font-extrabold text-zinc-900 shadow-sm transition hover:bg-yellow-500 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Add to Order
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+   Payment Modal (INR Cash & UPI)
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+const PaymentModal = ({ total, tokenNum, onClose, onConfirm }) => {
+  const [payMethod, setPayMethod] = useState('cash')
+  const [tendered, setTendered] = useState('')
+  const INDIAN_DENOMINATIONS = [100, 200, 500, 2000]
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div className="w-[420px] rounded-2xl bg-white shadow-2xl overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between bg-yellow-400 px-5 py-4">
+          <div>
+            <h3 className="text-base font-extrabold text-zinc-900">Bill & Payment</h3>
+            <p className="text-xs font-medium text-zinc-700">Token {tokenNum}</p>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1.5 hover:bg-yellow-500 transition active:scale-95">
+            <Icon d={ICON_CLOSE} size={18} />
+          </button>
+        </div>
+
+        {/* Payment Method Tabs */}
+        <div className="grid grid-cols-2 border-b border-gray-100 bg-gray-50 p-1.5 gap-1.5">
+          <button
+            onClick={() => setPayMethod('cash')}
+            className={`flex items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-extrabold transition ${
+              payMethod === 'cash'
+                ? 'bg-white text-gray-900 shadow-sm border border-gray-200'
+                : 'text-gray-500 hover:text-gray-900'
+            }`}
+          >
+            <Icon d={ICON_CASH} size={15} />
+            Cash Payment
+          </button>
+          <button
+            onClick={() => setPayMethod('upi')}
+            className={`flex items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-extrabold transition ${
+              payMethod === 'upi'
+                ? 'bg-white text-blue-700 shadow-sm border border-blue-200'
+                : 'text-gray-500 hover:text-gray-900'
+            }`}
+          >
+            <Icon d={ICON_MOBILE} size={15} />
+            UPI / QR Code
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {/* Order Total Display */}
+          <div className="flex items-center justify-between rounded-xl bg-gray-50 px-4 py-3 border border-gray-100">
+            <span className="text-sm font-semibold text-gray-600">Order Total</span>
+            <span className="text-2xl font-extrabold text-gray-900">â‚¹{total.toFixed(2)}</span>
+          </div>
+
+          {payMethod === 'cash' ? (
+            <>
+              {/* Quick Indian Denominations */}
+              <div>
+                <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-gray-500">Quick Select Notes</p>
+                <div className="grid grid-cols-4 gap-2">
+                  {INDIAN_DENOMINATIONS.map((note) => (
+                    <button
+                      key={note}
+                      onClick={() => setTendered(note.toString())}
+                      className={`rounded-xl border py-2.5 text-xs font-extrabold transition active:scale-95 ${
+                        tendered === note.toString()
+                          ? 'border-yellow-400 bg-yellow-100 text-zinc-900 shadow-sm'
+                          : 'border-gray-200 bg-gray-50 text-gray-700 hover:bg-yellow-50 hover:border-yellow-400'
+                      }`}
+                    >
+                      â‚¹{note}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Confirm Cash */}
+              <button
+                onClick={() => onConfirm('Cash')}
+                className="w-full rounded-xl bg-green-500 py-3 text-sm font-extrabold text-white shadow-sm transition hover:bg-green-600 active:scale-95"
+              >
+                Confirm Cash Payment â€” â‚¹{total.toFixed(2)}
+              </button>
+            </>
+          ) : (
+            <>
+              {/* UPI QR Display */}
+              <div className="flex flex-col items-center justify-center rounded-2xl border border-gray-200 bg-gray-50/50 p-4 text-center">
+                <div className="mb-2 overflow-hidden rounded-xl bg-white p-2 shadow-md border border-gray-200">
+                  <img
+                    src="/QR.jpg"
+                    alt="UPI QR Code"
+                    className="h-44 w-44 object-contain rounded-lg"
+                  />
+                </div>
+
+                <p className="mt-1 text-xs font-extrabold text-gray-900">UPI ID: paytmqr659xjb@ptys</p>
+                <p className="mt-0.5 text-[11px] font-medium text-gray-500">Scan using any UPI app (GPay, PhonePe, Paytm, BHIM)</p>
+                <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-blue-50 border border-blue-200 px-3 py-1 text-xs font-bold text-blue-700">
+                  Payable: â‚¹{total.toFixed(2)}
+                </span>
+              </div>
+
+              {/* Confirm UPI */}
+              <button
+                onClick={() => onConfirm('UPI')}
+                className="w-full rounded-xl bg-green-500 py-3 text-sm font-extrabold text-white shadow-sm transition hover:bg-green-600 active:scale-95"
+              >
+                Confirm Payment â€” â‚¹{total.toFixed(2)}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+   Draft List Modal
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+   Draft List Modal
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+const DraftModal = ({ drafts, onClose, onRestore }) => {
+  const [searchQuery, setSearchQuery] = useState('')
+
+  const filteredDrafts = drafts.filter((d) => {
+    const query = searchQuery.toLowerCase().trim()
+    if (!query) return true
+    return (
+      (d.customerPhone ?? '').toLowerCase().includes(query) ||
+      (d.customerName ?? '').toLowerCase().includes(query) ||
+      String(d.id).includes(query)
+    )
+  })
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div className="w-[420px] max-h-[80vh] rounded-2xl bg-white shadow-2xl overflow-hidden flex flex-col">
+        <div className="flex items-center justify-between bg-gray-900 px-5 py-4 shrink-0">
+          <div>
+            <h3 className="text-sm font-extrabold text-white font-sans">Saved Drafts (Pending Pickups)</h3>
+            <p className="text-[10px] text-gray-400">Search by phone, name, or draft ID</p>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1.5 hover:bg-gray-700 transition text-gray-400 hover:text-white active:scale-95">
+            <Icon d={ICON_CLOSE} size={16} />
+          </button>
+        </div>
+
+        {/* Search bar inside Draft list */}
+        {drafts.length > 0 && (
+          <div className="border-b border-gray-100 bg-gray-50 px-4 py-3 shrink-0">
+            <input
+              type="text"
+              placeholder="ðŸ” Search drafts by Phone or Name..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full rounded-xl border border-gray-200 bg-white px-3.5 py-2 text-xs font-semibold text-gray-700 outline-none focus:border-yellow-400 transition"
+            />
+          </div>
+        )}
+
+        <div className="flex-1 overflow-y-auto p-4 space-y-3 scrollbar-thin">
+          {filteredDrafts.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
+              <Icon d={ICON_DRAFT} size={28} className="text-gray-300" />
+              <p className="text-xs font-semibold text-gray-400">
+                {searchQuery ? 'No drafts match search' : 'No drafts saved yet'}
+              </p>
+            </div>
+          ) : filteredDrafts.map((d) => (
+            <div key={d.id} className="flex items-center justify-between rounded-xl border border-gray-100 bg-gray-50/50 px-4 py-3 hover:bg-gray-50 transition">
+              <div className="min-w-0 flex-1 pr-3">
+                <div className="flex items-center gap-2">
+                  <p className="text-xs font-bold text-gray-800">Draft #{d.id}</p>
+                  <span className="rounded-full bg-blue-50 border border-blue-100 px-2 py-0.25 text-[9px] font-bold text-blue-700 shrink-0">
+                    {d.items} items
+                  </span>
+                </div>
+                
+                {/* Customer Details Display */}
+                {(d.customerPhone || d.customerName) && (
+                  <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5">
+                    {d.customerPhone && (
+                      <span className="inline-flex items-center gap-1 rounded bg-green-50 px-1.5 py-0.25 text-[10px] font-bold text-green-700">
+                        ðŸ“ž {d.customerPhone}
+                      </span>
+                    )}
+                    {d.customerName && (
+                      <span className="inline-flex items-center gap-1 rounded bg-zinc-100 px-1.5 py-0.25 text-[10px] font-bold text-zinc-700">
+                        ðŸ‘¤ {d.customerName}
+                      </span>
+                    )}
+                  </div>
+                )}
+                
+                <p className="mt-1 text-[10px] font-medium text-gray-400">{d.savedAt} Â· Total: <span className="font-bold text-gray-700">â‚¹{d.total.toFixed(2)}</span></p>
+              </div>
+              <button
+                onClick={() => onRestore(d)}
+                className="shrink-0 rounded-lg bg-gray-900 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-black transition active:scale-95"
+              >
+                Load
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+   Product Card â€” full-card clickable
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”  /* â”€â”€ State â”€â”€ */
+  const [tokens,              setTokens]              = useState(() => {
+    const saved = localStorage.getItem('pos_tokens')
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved)
+        return new Map(parsed)
+      } catch (e) {
+        console.error(e)
+      }
+    }
+    return new Map()
+  })
+  const [activeToken,         setActiveToken]         = useState(null)
+  const [activeCategory,      setActiveCategory]      = useState('Show All')
+  const [sortOrder,           setSortOrder]           = useState('asc') // 'asc' = Low to High, 'desc' = High to Low
+  const [toasts,              setToasts]              = useState([])
+  const [drafts,              setDrafts]              = useState(() => {
+    const saved = localStorage.getItem('pos_drafts')
+    if (saved) {
+      try {
+        return JSON.parse(saved)
+      } catch (e) {
+        console.error(e)
+      }
+    }
+    return []
+  })
+  const [showDraftList,       setShowDraftList]       = useState(false)
+  const [showPayModal,        setShowPayModal]        = useState(false)
+  const [showCustomItemModal, setShowCustomItemModal] = useState(false)
+  const [kotTokens,           setKotTokens]           = useState(() => {
+    const saved = localStorage.getItem('pos_kot_tokens')
+    if (saved) {
+      try {
+        return new Set(JSON.parse(saved))
+      } catch (e) {
+        console.error(e)
+      }
+    }
+    return new Set()
+  })
+  const [editingPriceId,      setEditingPriceId]      = useState(null)
+  const [tempPrice,           setTempPrice]           = useState('')
+  const [billingSettings,     setBillingSettings]     = useState(() => {
+    const saved = localStorage.getItem('pos_billing_settings')
+    return saved ? JSON.parse(saved) : { taxRate: '5.00', taxType: 'exclusive' }
+  })
+
+  useEffect(() => {
+    localStorage.setItem('pos_drafts', JSON.stringify(drafts))
+  }, [drafts])
+
+  useEffect(() => {
+    localStorage.setItem('pos_tokens', JSON.stringify(Array.from(tokens.entries())))
+  }, [tokens])
+
+  useEffect(() => {
+    localStorage.setItem('pos_kot_tokens', JSON.stringify(Array.from(kotTokens)))
+  }, [kotTokens])
+
+  const [menuItems, setMenuItems] = useState(() => {
+    const saved = localStorage.getItem('pos_menu_items')
+    if (saved) {
+      try {
+        return JSON.parse(saved)
+      } catch (e) {
+        console.error(e)
+      }
+    }
+    return []
+  })
+
+  useEffect(() => {
+    const syncItems = () => {
+      const saved = localStorage.getItem('pos_menu_items')
+      if (saved) {
+        try {
+          setMenuItems(JSON.parse(saved))
+        } catch (e) {
+          console.error(e)
+        }
+      }
+    }
+    window.addEventListener('storage', syncItems)
+    window.addEventListener('focus', syncItems)
+    return () => {
+      window.removeEventListener('storage', syncItems)
+      window.removeEventListener('focus', syncItems)
+    }
+  }, [])
+
+  useEffect(() => {
+    const syncBilling = () => {
+      const saved = localStorage.getItem('pos_billing_settings')
+      if (saved) {
+        try {
+          setBillingSettings(JSON.parse(saved))
+        } catch (e) {
+          console.error(e)
+        }
+      }
+    }
+    window.addEventListener('storage', syncBilling)
+    window.addEventListener('focus', syncBilling)
+    return () => {
+      window.removeEventListener('storage', syncBilling)
+      window.removeEventListener('focus', syncBilling)
+    }
+  }, [])
+
+  /* â”€â”€ Derived â”€â”€ */
+  const activeCount = tokens.size
+  const atCapacity  = activeCount >= MAX_TOKENS
+  const cart        = activeToken ? (tokens.get(activeToken)?.cart ?? []) : []
+
+  const taxRatePercent = parseFloat(billingSettings.taxRate || '5.00')
+  const taxRateFraction = taxRatePercent / 100
+  const isInclusive = billingSettings.taxType === 'inclusive'
+
+  const cartBaseSum = cart.reduce((s, c) => s + c.price * c.qty, 0)
+
+  let subtotal = 0
+  let taxAmount = 0
+  let total = 0
+
+  if (isInclusive) {
+    total = cartBaseSum
+    taxAmount = total * (taxRateFraction / (1 + taxRateFraction))
+    subtotal = total - taxAmount
+  } else {
+    subtotal = cartBaseSum
+    taxAmount = subtotal * taxRateFraction
+    total = subtotal + taxAmount
+  }
+
+  const activeCustomerPhone = activeToken ? (tokens.get(activeToken)?.customerPhone ?? '') : ''

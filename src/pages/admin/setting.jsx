@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../../services/api'
+import { sendToBluetoothPrinter, checkPrinterStreamStatus } from '../../utils/bluetoothPrinter'
+
 
 /* ── Inline SVG icon primitives ── */
 const Icon = ({ d, size = 16, className = '' }) => (
@@ -292,6 +294,30 @@ const Settings = () => {
         showToast(`Bluetooth error: ${err.message}`)
       }
       setStatus('error')
+    }
+  }
+
+  // Test Print & Stream Connection Verification
+  const handleTestPrint = async (printerType) => {
+    const label = printerType === 'kot' ? 'Kitchen KOT' : 'Counter Billing'
+    const status = checkPrinterStreamStatus(printerType)
+    showToast(`Testing stream connection to ${label}...`)
+
+    const sampleReceipt = [
+      '================================',
+      `   MAGIXX - ${label.toUpperCase()} TEST`,
+      '================================',
+      `Printer: ${printerType === 'kot' ? (printers.kotPrinterName || 'Not Set') : (printers.billingPrinterName || 'Not Set')}`,
+      `Time: ${new Date().toLocaleTimeString()}`,
+      `Stream Status: ${status.isConnected ? 'CONNECTED' : 'RECONNECTING / PAIRING'}`,
+      '--------------------------------',
+      '*** STREAM CONNECTION OK ***',
+      '================================',
+    ].join('\n')
+
+    const printed = await sendToBluetoothPrinter(printerType, sampleReceipt, showToast)
+    if (printed) {
+      showToast(`Test receipt printed successfully on ${label}! Stream is healthy.`)
     }
   }
 
@@ -1230,7 +1256,7 @@ const Settings = () => {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 pt-1">
+                <div className="flex flex-wrap items-center gap-2 pt-1">
                   <button
                     type="button"
                     onClick={() => scanAndPairPrinter('kot')}
@@ -1239,6 +1265,14 @@ const Settings = () => {
                   >
                     <Icon d={IC.bluetooth} size={13} />
                     {kotPairStatus === 'scanning' ? 'Scanning…' : 'Scan & Pair KOT Printer'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleTestPrint('kot')}
+                    className="flex items-center gap-1.5 rounded-lg border border-yellow-300 bg-yellow-50 px-3 py-2 text-xs font-extrabold text-yellow-900 hover:bg-yellow-100 transition cursor-pointer"
+                  >
+                    <Icon d={IC.printer} size={13} />
+                    Test Print & Verify Stream
                   </button>
                   {printers.kotPrinterName && (
                     <button
@@ -1298,7 +1332,7 @@ const Settings = () => {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 pt-1">
+                <div className="flex flex-wrap items-center gap-2 pt-1">
                   <button
                     type="button"
                     onClick={() => scanAndPairPrinter('billing')}
@@ -1307,6 +1341,14 @@ const Settings = () => {
                   >
                     <Icon d={IC.bluetooth} size={13} />
                     {billPairStatus === 'scanning' ? 'Scanning…' : 'Scan & Pair Billing Printer'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleTestPrint('billing')}
+                    className="flex items-center gap-1.5 rounded-lg border border-yellow-300 bg-yellow-50 px-3 py-2 text-xs font-extrabold text-yellow-900 hover:bg-yellow-100 transition cursor-pointer"
+                  >
+                    <Icon d={IC.printer} size={13} />
+                    Test Print & Verify Stream
                   </button>
                   {printers.billingPrinterName && (
                     <button

@@ -1,8 +1,15 @@
-import { app, BrowserWindow, session } from 'electron';
+import { app, BrowserWindow, session, ipcMain } from 'electron';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Enable Web Bluetooth flags in Electron runtime
 app.commandLine.appendSwitch('enable-experimental-web-platform-features');
 app.commandLine.appendSwitch('enable-web-bluetooth');
+
+let savedBluetoothCallback = null;
 
 function createWindow() {
   const mainWindow = new BrowserWindow({
@@ -13,6 +20,7 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      preload: path.join(__dirname, 'preload.cjs'),
     },
   });
 
@@ -49,28 +57,33 @@ function createWindow() {
     session.defaultSession.setDevicePermissionHandler(() => true);
   }
 
-  // Handle Web Bluetooth device selection hook cleanly
+  // Handle Web Bluetooth device selection hook by caching callback and forwarding deviceList to UI
   mainWindow.webContents.on('select-bluetooth-device', (event, deviceList, callback) => {
     event.preventDefault();
+    savedBluetoothCallback = callback;
     
-    // Give Windows a few seconds to scan, then pick the first available device
-    const scanInterval = setInterval(() => {
-      if (deviceList && deviceList.length > 0) {
-        clearInterval(scanInterval);
-        const targetDevice = deviceList.find((d) => d.deviceName && d.deviceName.trim().length > 0) || deviceList[0];
-        callback(targetDevice.deviceId);
-      }
-    }, 500);
-
-    // Fallback safety timeout after 8 seconds if no device responds
-    setTimeout(() => {
-      clearInterval(scanInterval);
-      callback('');
-    }, 8000);
+    // Forward discovered Bluetooth device list to renderer window
+    mainWindow.webContents.send('bluetooth-device-list', deviceList);
   });
 
   mainWindow.loadURL('https://magixx-cafe.vercel.app/');
 }
+
+// IPC Listener to handle device selection from React modal UI
+ipcMain.on('choose-bluetooth-device', (event, deviceId) => {
+  if (savedBluetoothCallback) {
+    savedBluetoothCallback(deviceId);
+    savedBluetoothCallback = null;
+  }
+});
+
+// IPC Listener to handle cancelling Bluetooth device selection
+ipcMain.on('cancel-bluetooth-device', () => {
+  if (savedBluetoothCallback) {
+    savedBluetoothCallback('');
+    savedBluetoothCallback = null;
+  }
+});
 
 app.whenReady().then(() => {
   createWindow();

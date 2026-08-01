@@ -111,6 +111,7 @@ const Settings = () => {
   // Bluetooth custom device chooser modal states
   const [availableDevices, setAvailableDevices] = useState([])
   const [showDeviceModal, setShowDeviceModal] = useState(false)
+  const selectedDeviceNameRef = useRef('')
 
   useEffect(() => {
     if (window.electronAPI && typeof window.electronAPI.onBluetoothDevices === 'function') {
@@ -124,7 +125,8 @@ const Settings = () => {
     }
   }, [])
 
-  const handleSelectBluetoothDevice = (deviceId) => {
+  const handleSelectBluetoothDevice = (deviceId, deviceName) => {
+    selectedDeviceNameRef.current = deviceName || ''
     if (window.electronAPI && typeof window.electronAPI.selectBluetoothDevice === 'function') {
       window.electronAPI.selectBluetoothDevice(deviceId)
     }
@@ -132,6 +134,7 @@ const Settings = () => {
   }
 
   const handleCancelBluetoothDevice = () => {
+    selectedDeviceNameRef.current = ''
     if (window.electronAPI && typeof window.electronAPI.cancelBluetoothDevice === 'function') {
       window.electronAPI.cancelBluetoothDevice()
     }
@@ -230,10 +233,17 @@ const Settings = () => {
             localStorage.setItem('userInfo', JSON.stringify(updatedActive))
             window.dispatchEvent(new Event('pos_user_updated'))
           }
+          merged = merged.map(s => (s._id === matchingStaff._id || s.id === matchingStaff.id) ? {
+            ...s,
+            name: activeUser.name,
+            phone: activeUser.phone || s.phone,
+            role: activeUser.role || s.role,
+            img: activeUser.avatar || s.img
+          } : s)
         } else if (activeUser.name) {
           merged = [{
-            id: activeUser._id || Date.now(),
-            _id: activeUser._id,
+            id: activeUser._id || 'admin_active',
+            _id: activeUser._id || 'admin_active',
             name: activeUser.name,
             phone: activeUser.phone || '9876543210',
             email: activeUser.email || 'admin@magixx.com',
@@ -276,16 +286,22 @@ const Settings = () => {
           localStorage.setItem('pos_store_settings', JSON.stringify(updated))
           return updated
         })
-        // Load saved printer config from backend
-        setPrinters((prev) => ({
-          ...prev,
-          kotPrinterName: res.data.kotPrinterName || prev.kotPrinterName || '',
-          kotPrinterAddress: res.data.kotPrinterAddress || prev.kotPrinterAddress || '',
-          kotPrinterServiceUUID: res.data.kotPrinterServiceUUID || prev.kotPrinterServiceUUID || GENERIC_SERIAL_UUID,
-          billingPrinterName: res.data.billingPrinterName || prev.billingPrinterName || '',
-          billingPrinterAddress: res.data.billingPrinterAddress || prev.billingPrinterAddress || '',
-          billingPrinterServiceUUID: res.data.billingPrinterServiceUUID || prev.billingPrinterServiceUUID || GENERIC_SERIAL_UUID,
-        }))
+        
+        // Load saved printer config from backend & merge with localStorage persistence
+        const localSaved = localStorage.getItem('pos_printer_settings')
+        const localPrinters = localSaved ? JSON.parse(localSaved) : {}
+
+        const mergedPrinters = {
+          kotPrinterName: res.data.kotPrinterName || localPrinters.kotPrinterName || '',
+          kotPrinterAddress: res.data.kotPrinterAddress || localPrinters.kotPrinterAddress || '',
+          kotPrinterServiceUUID: res.data.kotPrinterServiceUUID || localPrinters.kotPrinterServiceUUID || GENERIC_SERIAL_UUID,
+          billingPrinterName: res.data.billingPrinterName || localPrinters.billingPrinterName || '',
+          billingPrinterAddress: res.data.billingPrinterAddress || localPrinters.billingPrinterAddress || '',
+          billingPrinterServiceUUID: res.data.billingPrinterServiceUUID || localPrinters.billingPrinterServiceUUID || GENERIC_SERIAL_UUID,
+        }
+
+        setPrinters(mergedPrinters)
+        localStorage.setItem('pos_printer_settings', JSON.stringify(mergedPrinters))
       }
     } catch (err) {
       console.warn('Could not fetch backend settings:', err.message)
@@ -311,15 +327,40 @@ const Settings = () => {
           '00001101-0000-1000-8000-00805f9b34fb',
         ],
       })
-      const deviceName = device.name || 'Unknown Printer'
+      const deviceName = device.name || selectedDeviceNameRef.current || 'Bluetooth Thermal Printer'
       const deviceAddress = device.id || ''
-      setPrinters((prev) => ({
-        ...prev,
-        [printerType === 'kot' ? 'kotPrinterName' : 'billingPrinterName']: deviceName,
-        [printerType === 'kot' ? 'kotPrinterAddress' : 'billingPrinterAddress']: deviceAddress,
-      }))
+
+      const targetKeyName = printerType === 'kot' ? 'kotPrinterName' : 'billingPrinterName'
+      const targetKeyAddr = printerType === 'kot' ? 'kotPrinterAddress' : 'billingPrinterAddress'
+
+      let updatedPrinters = {}
+      setPrinters((prev) => {
+        updatedPrinters = {
+          ...prev,
+          [targetKeyName]: deviceName,
+          [targetKeyAddr]: deviceAddress,
+        }
+        localStorage.setItem('pos_printer_settings', JSON.stringify(updatedPrinters))
+        window.dispatchEvent(new Event('storage'))
+        return updatedPrinters
+      })
+
+      // Sync paired printer settings to backend API asynchronously
+      try {
+        await api.put('/settings', {
+          kotPrinterName: printerType === 'kot' ? deviceName : (printers.kotPrinterName || ''),
+          kotPrinterAddress: printerType === 'kot' ? deviceAddress : (printers.kotPrinterAddress || ''),
+          kotPrinterServiceUUID: printers.kotPrinterServiceUUID || GENERIC_SERIAL_UUID,
+          billingPrinterName: printerType === 'billing' ? deviceName : (printers.billingPrinterName || ''),
+          billingPrinterAddress: printerType === 'billing' ? deviceAddress : (printers.billingPrinterAddress || ''),
+          billingPrinterServiceUUID: printers.billingPrinterServiceUUID || GENERIC_SERIAL_UUID,
+        })
+      } catch (err) {
+        console.warn('Could not auto-sync paired printer settings to backend:', err.message)
+      }
+
       setStatus('paired')
-      showToast(`Paired: "${deviceName}" (${deviceAddress}) as ${printerType === 'kot' ? 'KOT Kitchen' : 'Billing Counter'} printer`)
+      showToast(`Paired & Saved: "${deviceName}" (${deviceAddress}) as ${printerType === 'kot' ? 'KOT Kitchen' : 'Billing Counter'} printer`)
     } catch (err) {
       if (err.name !== 'NotFoundError') {
         console.error('Bluetooth pairing error:', err)
@@ -1786,7 +1827,7 @@ const Settings = () => {
                       </p>
                     </div>
                     <button
-                      onClick={() => handleSelectBluetoothDevice(dev.deviceId)}
+                      onClick={() => handleSelectBluetoothDevice(dev.deviceId, dev.deviceName || dev.name)}
                       className="rounded-xl bg-yellow-400 px-4 py-1.5 text-xs font-extrabold text-zinc-900 hover:bg-yellow-500 shadow-sm transition shrink-0 cursor-pointer"
                     >
                       Connect

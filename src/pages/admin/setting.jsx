@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../../services/api'
-import { sendToLocalPrintAgent, checkLocalPrintAgentHealth } from '../../utils/localPrintAgent'
+import { sendToBluetoothPrinter, checkPrinterStreamStatus } from '../../utils/bluetoothPrinter'
 
 
 /* ── Inline SVG icon primitives ── */
@@ -16,7 +16,7 @@ const Icon = ({ d, size = 16, className = '' }) => (
 const IC = {
   store:    'M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z M9 22V12h6v10',
   percent:  'M19 5L5 19 M6.5 6.5a1.5 1.5 0 100-3 1.5 1.5 0 000 3z M17.5 17.5a1.5 1.5 0 100-3 1.5 1.5 0 000 3z',
-  users:    'M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2 M9 11a4 4 0 100-8 4 4 0 000 8z M23 21v-2a4 4 0 00-3-3.87 M16 3.13a4 4 0 010 7.75',
+  users:    'M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2 M9 11a4 4 0 100-8 4 4 0 00-4 4v2 M23 21v-2a4 4 0 00-3-3.87 M16 3.13a4 4 0 010 7.75',
   database: 'M12 22c5.523 0 10-1.79 10-4V6c0-2.21-4.477-4-10-4S2 3.79 2 6v12c0 2.21 4.477 4 10 4z M2 6c0 2.21 4.477 4 10 4s10-1.79 10-4 M2 12c0 2.21 4.477 4 10 4s10-1.79 10-4 M2 18c0 2.21 4.477 4 10 4s10-1.79 10-4',
   check:    'M20 6L9 17l-5-5',
   trash:    'M3 6h18 M8 6V4h8v2 M19 6l-1 14H6L5 6',
@@ -56,14 +56,12 @@ const NORDIC_UART_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e'
 const GENERIC_SERIAL_UUID = '000018f0-0000-1000-8000-00805f9b34fb'
 
 const DEFAULT_PRINTERS = {
-  printAgentUrl: 'http://localhost:3000/print',
-  printDispatchMode: 'local_direct',
-  kotPrinterIdentifier: 'KOT_Thermal_Printer',
+  kotPrinterName: '',
   kotPrinterAddress: '',
-  kotPrinterName: 'KOT_Thermal_Printer',
-  billingPrinterIdentifier: 'Billing_Thermal_Printer',
+  kotPrinterServiceUUID: GENERIC_SERIAL_UUID,
+  billingPrinterName: '',
   billingPrinterAddress: '',
-  billingPrinterName: 'Billing_Thermal_Printer',
+  billingPrinterServiceUUID: GENERIC_SERIAL_UUID,
 }
 
 const ROLE_STYLES = {
@@ -250,14 +248,12 @@ const Settings = () => {
         // Load saved printer config from backend
         setPrinters((prev) => ({
           ...prev,
-          printAgentUrl: res.data.printAgentUrl || prev.printAgentUrl || 'http://localhost:3000/print',
-          printDispatchMode: res.data.printDispatchMode || prev.printDispatchMode || 'local_direct',
-          kotPrinterIdentifier: res.data.kotPrinterIdentifier || res.data.kotPrinterName || prev.kotPrinterIdentifier || 'KOT_Thermal_Printer',
+          kotPrinterName: res.data.kotPrinterName || prev.kotPrinterName || '',
           kotPrinterAddress: res.data.kotPrinterAddress || prev.kotPrinterAddress || '',
-          kotPrinterName: res.data.kotPrinterIdentifier || res.data.kotPrinterName || prev.kotPrinterName || 'KOT_Thermal_Printer',
-          billingPrinterIdentifier: res.data.billingPrinterIdentifier || res.data.billingPrinterName || prev.billingPrinterIdentifier || 'Billing_Thermal_Printer',
+          kotPrinterServiceUUID: res.data.kotPrinterServiceUUID || prev.kotPrinterServiceUUID || GENERIC_SERIAL_UUID,
+          billingPrinterName: res.data.billingPrinterName || prev.billingPrinterName || '',
           billingPrinterAddress: res.data.billingPrinterAddress || prev.billingPrinterAddress || '',
-          billingPrinterName: res.data.billingPrinterIdentifier || res.data.billingPrinterName || prev.billingPrinterName || 'Billing_Thermal_Printer',
+          billingPrinterServiceUUID: res.data.billingPrinterServiceUUID || prev.billingPrinterServiceUUID || GENERIC_SERIAL_UUID,
         }))
       }
     } catch (err) {
@@ -265,64 +261,83 @@ const Settings = () => {
     }
   }
 
-  // Ping Local Print Agent Service
-  const handlePingAgent = async () => {
-    const targetUrl = printers.printAgentUrl || 'http://localhost:3000/print'
-    showToast(`Pinging Local Print Agent at ${targetUrl}...`)
-    const result = await checkLocalPrintAgentHealth(targetUrl)
-    showToast(result.message)
+  // Bluetooth: Scan and pair a printer — stores device name & hardware address for targeted connection
+  const scanAndPairPrinter = async (printerType) => {
+    if (!navigator.bluetooth) {
+      showToast('Web Bluetooth is not supported in this browser. Use Chrome or Edge on desktop/Android.')
+      return
+    }
+    const setStatus = printerType === 'kot' ? setKotPairStatus : setBillPairStatus
+    setStatus('scanning')
+    try {
+      const device = await navigator.bluetooth.requestDevice({
+        acceptAllDevices: true,
+        optionalServices: [
+          GENERIC_SERIAL_UUID,
+          NORDIC_UART_UUID,
+          '000018f0-0000-1000-8000-00805f9b34fb',
+          '0000fff0-0000-1000-8000-00805f9b34fb',
+        ],
+      })
+      const deviceName = device.name || 'Unknown Printer'
+      const deviceAddress = device.id || ''
+      setPrinters((prev) => ({
+        ...prev,
+        [printerType === 'kot' ? 'kotPrinterName' : 'billingPrinterName']: deviceName,
+        [printerType === 'kot' ? 'kotPrinterAddress' : 'billingPrinterAddress']: deviceAddress,
+      }))
+      setStatus('paired')
+      showToast(`Paired: "${deviceName}" (${deviceAddress}) as ${printerType === 'kot' ? 'KOT Kitchen' : 'Billing Counter'} printer`)
+    } catch (err) {
+      if (err.name !== 'NotFoundError') {
+        console.error('Bluetooth pairing error:', err)
+        showToast(`Bluetooth error: ${err.message}`)
+      }
+      setStatus('error')
+    }
   }
 
-  // Test Print via Local Print Agent HTTP POST
+  // Test Print & Stream Connection Verification
   const handleTestPrint = async (printerType) => {
     const label = printerType === 'kot' ? 'Kitchen KOT' : 'Counter Billing'
-    const targetName = printerType === 'kot' ? (printers.kotPrinterIdentifier || printers.kotPrinterName) : (printers.billingPrinterIdentifier || printers.billingPrinterName)
-    const agentUrl = printers.printAgentUrl || 'http://localhost:3000/print'
-    showToast(`Dispatching test print to Local Agent (${agentUrl}) for ${label}...`)
+    const status = checkPrinterStreamStatus(printerType)
+    showToast(`Testing Bluetooth stream connection to ${label}...`)
 
     const sampleReceipt = [
       '================================',
       `   MAGIXX - ${label.toUpperCase()} TEST`,
       '================================',
-      `Target Printer : ${targetName || 'Default'}`,
-      `Service Agent  : ${agentUrl}`,
-      `Dispatch Mode  : ${printers.printDispatchMode || 'local_direct'}`,
-      `Time           : ${new Date().toLocaleTimeString()}`,
+      `Printer: ${printerType === 'kot' ? (printers.kotPrinterName || 'Not Set') : (printers.billingPrinterName || 'Not Set')}`,
+      `Time: ${new Date().toLocaleTimeString()}`,
+      `Stream Status: ${status.isConnected ? 'CONNECTED' : 'RECONNECTING / PAIRING'}`,
       '--------------------------------',
-      '*** LOCAL PRINT AGENT TEST OK ***',
+      '*** STREAM CONNECTION OK ***',
       '================================',
     ].join('\n')
 
-    const success = await sendToLocalPrintAgent(printerType, sampleReceipt, showToast)
-    if (success) {
-      showToast(`Test receipt dispatched successfully to ${label}!`)
+    const printed = await sendToBluetoothPrinter(printerType, sampleReceipt, showToast)
+    if (printed) {
+      showToast(`Test receipt printed successfully on ${label}! Stream is healthy.`)
     }
   }
 
   // Save printer config to localStorage and backend
   const savePrinterSettings = async () => {
-    const payload = {
-      ...printers,
-      kotPrinterName: printers.kotPrinterIdentifier || printers.kotPrinterName,
-      billingPrinterName: printers.billingPrinterIdentifier || printers.billingPrinterName,
-    }
-    localStorage.setItem('pos_printer_settings', JSON.stringify(payload))
+    localStorage.setItem('pos_printer_settings', JSON.stringify(printers))
     window.dispatchEvent(new Event('storage'))
     try {
       await api.put('/settings', {
-        printAgentUrl: printers.printAgentUrl,
-        printDispatchMode: printers.printDispatchMode,
-        kotPrinterIdentifier: printers.kotPrinterIdentifier,
-        kotPrinterName: printers.kotPrinterIdentifier,
+        kotPrinterName: printers.kotPrinterName,
         kotPrinterAddress: printers.kotPrinterAddress,
-        billingPrinterIdentifier: printers.billingPrinterIdentifier,
-        billingPrinterName: printers.billingPrinterIdentifier,
+        kotPrinterServiceUUID: printers.kotPrinterServiceUUID,
+        billingPrinterName: printers.billingPrinterName,
         billingPrinterAddress: printers.billingPrinterAddress,
+        billingPrinterServiceUUID: printers.billingPrinterServiceUUID,
       })
     } catch (err) {
       console.warn('Could not save printer settings to backend:', err.message)
     }
-    showToast('Local Print Agent configuration saved successfully!')
+    showToast('Printer configuration saved successfully!')
   }
 
   useEffect(() => {
@@ -1184,87 +1199,58 @@ const Settings = () => {
                 <p className="mt-0.5 text-xs text-zinc-500">Configure Bluetooth thermal printers for KOT (kitchen) and billing (counter) receipts. Requires Chrome or Edge browser with Bluetooth enabled.</p>
               </div>
 
-              {/* Local Print Agent Service Configuration */}
-              <div className="rounded-xl border border-yellow-200 bg-yellow-50/70 p-4 space-y-3.5">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-yellow-200 text-yellow-900 font-bold">
-                      ⚡
-                    </div>
-                    <div>
-                      <p className="text-xs font-extrabold text-zinc-900">Local Print Agent Service URL</p>
-                      <p className="text-[10px] text-zinc-600 font-medium">HTTP POST endpoint for local shop print agent daemon</p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handlePingAgent}
-                    className="flex items-center gap-1.5 rounded-lg border border-yellow-400 bg-yellow-400 px-3 py-1.5 text-xs font-extrabold text-zinc-900 hover:bg-yellow-500 transition cursor-pointer shadow-2xs"
-                  >
-                    Ping Local Agent
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <div className="md:col-span-2">
-                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-600">Local Service URL Endpoint</label>
-                    <input
-                      type="url"
-                      value={printers.printAgentUrl || 'http://localhost:3000/print'}
-                      onChange={(e) => setPrinters((p) => ({ ...p, printAgentUrl: e.target.value }))}
-                      placeholder="http://localhost:3000/print"
-                      className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs font-mono font-semibold text-zinc-900 outline-none focus:border-yellow-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-600">Dispatch Mode</label>
-                    <select
-                      value={printers.printDispatchMode || 'local_direct'}
-                      onChange={(e) => setPrinters((p) => ({ ...p, printDispatchMode: e.target.value }))}
-                      className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs font-bold text-zinc-900 outline-none focus:border-yellow-500 cursor-pointer"
-                    >
-                      <option value="local_direct">Direct Local Agent (POST)</option>
-                      <option value="backend_proxy">Cloud Backend Proxy</option>
-                    </select>
-                  </div>
-                </div>
+              {/* Browser Bluetooth support indicator */}
+              <div className={`flex items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-xs font-bold ${
+                navigator.bluetooth
+                  ? 'border-green-200 bg-green-50 text-green-800'
+                  : 'border-amber-200 bg-amber-50 text-amber-800'
+              }`}>
+                <span className={`h-2 w-2 rounded-full ${navigator.bluetooth ? 'bg-green-500' : 'bg-amber-400'}`} />
+                {navigator.bluetooth
+                  ? 'Web Bluetooth API is available in this browser — direct printer pairing supported'
+                  : 'Web Bluetooth is NOT available. Use Chrome or Edge on desktop/Android for Bluetooth printing.'}
               </div>
 
-              {/* KOT Kitchen Printer Configuration */}
+              {/* KOT Kitchen Printer */}
               <div className="rounded-xl border border-zinc-100 bg-zinc-50/60 p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100 text-emerald-800">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-yellow-100 text-yellow-700">
                       <Icon d={IC.printer} size={15} />
                     </div>
                     <div>
-                      <p className="text-xs font-extrabold text-zinc-900">KOT Kitchen Thermal Printer</p>
-                      <p className="text-[10px] text-zinc-500">Receives 58mm KOT slip when &quot;KOT &amp; Print&quot; is triggered</p>
+                      <p className="text-xs font-extrabold text-zinc-900">KOT Kitchen Printer</p>
+                      <p className="text-[10px] text-zinc-500">Receives KOT slip when &quot;KOT &amp; Print&quot; is clicked in POS</p>
                     </div>
                   </div>
-                  <span className="flex items-center gap-1 rounded-full bg-emerald-100 border border-emerald-200 px-2.5 py-1 text-[10px] font-extrabold text-emerald-800">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />Active Agent
-                  </span>
+                  {kotPairStatus === 'paired' && (
+                    <span className="flex items-center gap-1 rounded-full bg-green-100 border border-green-200 px-2.5 py-1 text-[10px] font-extrabold text-green-700">
+                      <span className="h-1.5 w-1.5 rounded-full bg-green-500" />Paired
+                    </span>
+                  )}
+                  {kotPairStatus === 'scanning' && (
+                    <span className="rounded-full bg-blue-100 border border-blue-200 px-2.5 py-1 text-[10px] font-extrabold text-blue-700 animate-pulse">Scanning…</span>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-500">Printer Identifier / Name</label>
+                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-500">Device Name</label>
                     <input
                       type="text"
-                      value={printers.kotPrinterIdentifier || printers.kotPrinterName || ''}
-                      onChange={(e) => setPrinters((p) => ({ ...p, kotPrinterIdentifier: e.target.value, kotPrinterName: e.target.value }))}
-                      placeholder="e.g. KOT_Kitchen_58mm"
+                      value={printers.kotPrinterName}
+                      onChange={(e) => setPrinters((p) => ({ ...p, kotPrinterName: e.target.value }))}
+                      placeholder="e.g. PT-210 Kitchen"
                       className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 outline-none focus:border-yellow-400"
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-500">Port / Address (Optional)</label>
+                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-500">GATT Service UUID</label>
                     <input
                       type="text"
-                      value={printers.kotPrinterAddress || ''}
-                      onChange={(e) => setPrinters((p) => ({ ...p, kotPrinterAddress: e.target.value }))}
-                      placeholder="e.g. COM3 or 192.168.1.100"
+                      value={printers.kotPrinterServiceUUID}
+                      onChange={(e) => setPrinters((p) => ({ ...p, kotPrinterServiceUUID: e.target.value }))}
+                      placeholder="000018f0-0000-1000-8000-00805f9b34fb"
                       className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-mono text-zinc-700 outline-none focus:border-yellow-400"
                     />
                   </div>
@@ -1273,16 +1259,35 @@ const Settings = () => {
                 <div className="flex flex-wrap items-center gap-2 pt-1">
                   <button
                     type="button"
+                    onClick={() => scanAndPairPrinter('kot')}
+                    disabled={kotPairStatus === 'scanning'}
+                    className="flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-2 text-xs font-extrabold text-white hover:bg-zinc-700 transition disabled:opacity-50 cursor-pointer"
+                  >
+                    <Icon d={IC.bluetooth} size={13} />
+                    {kotPairStatus === 'scanning' ? 'Scanning…' : 'Scan & Pair KOT Printer'}
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => handleTestPrint('kot')}
-                    className="flex items-center gap-1.5 rounded-lg border border-yellow-300 bg-yellow-50 px-3.5 py-2 text-xs font-extrabold text-yellow-900 hover:bg-yellow-100 transition cursor-pointer"
+                    className="flex items-center gap-1.5 rounded-lg border border-yellow-300 bg-yellow-50 px-3 py-2 text-xs font-extrabold text-yellow-900 hover:bg-yellow-100 transition cursor-pointer"
                   >
                     <Icon d={IC.printer} size={13} />
-                    Test Print KOT via Local Agent
+                    Test Print &amp; Verify Stream
                   </button>
+                  {printers.kotPrinterName && (
+                    <button
+                      type="button"
+                      onClick={() => { setPrinters((p) => ({ ...p, kotPrinterName: '' })); setKotPairStatus('') }}
+                      className="flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-100 transition cursor-pointer"
+                    >
+                      <Icon d={IC.unlink} size={12} />
+                      Remove
+                    </button>
+                  )}
                 </div>
               </div>
 
-              {/* Billing Counter Printer Configuration */}
+              {/* Billing Counter Printer */}
               <div className="rounded-xl border border-zinc-100 bg-zinc-50/60 p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -1290,33 +1295,38 @@ const Settings = () => {
                       <Icon d={IC.printer} size={15} />
                     </div>
                     <div>
-                      <p className="text-xs font-extrabold text-zinc-900">Billing Counter Thermal Printer</p>
+                      <p className="text-xs font-extrabold text-zinc-900">Billing Counter Printer</p>
                       <p className="text-[10px] text-zinc-500">Receives final receipt when &quot;Checkout &amp; Pay&quot; completes in POS</p>
                     </div>
                   </div>
-                  <span className="flex items-center gap-1 rounded-full bg-blue-100 border border-blue-200 px-2.5 py-1 text-[10px] font-extrabold text-blue-800">
-                    <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />Active Agent
-                  </span>
+                  {billPairStatus === 'paired' && (
+                    <span className="flex items-center gap-1 rounded-full bg-green-100 border border-green-200 px-2.5 py-1 text-[10px] font-extrabold text-green-700">
+                      <span className="h-1.5 w-1.5 rounded-full bg-green-500" />Paired
+                    </span>
+                  )}
+                  {billPairStatus === 'scanning' && (
+                    <span className="rounded-full bg-blue-100 border border-blue-200 px-2.5 py-1 text-[10px] font-extrabold text-blue-700 animate-pulse">Scanning…</span>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-500">Printer Identifier / Name</label>
+                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-500">Device Name</label>
                     <input
                       type="text"
-                      value={printers.billingPrinterIdentifier || printers.billingPrinterName || ''}
-                      onChange={(e) => setPrinters((p) => ({ ...p, billingPrinterIdentifier: e.target.value, billingPrinterName: e.target.value }))}
-                      placeholder="e.g. Billing_Counter_80mm"
+                      value={printers.billingPrinterName}
+                      onChange={(e) => setPrinters((p) => ({ ...p, billingPrinterName: e.target.value }))}
+                      placeholder="e.g. PT-210 Counter"
                       className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 outline-none focus:border-yellow-400"
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-500">Port / Address (Optional)</label>
+                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-500">GATT Service UUID</label>
                     <input
                       type="text"
-                      value={printers.billingPrinterAddress || ''}
-                      onChange={(e) => setPrinters((p) => ({ ...p, billingPrinterAddress: e.target.value }))}
-                      placeholder="e.g. COM4 or 192.168.1.101"
+                      value={printers.billingPrinterServiceUUID}
+                      onChange={(e) => setPrinters((p) => ({ ...p, billingPrinterServiceUUID: e.target.value }))}
+                      placeholder="000018f0-0000-1000-8000-00805f9b34fb"
                       className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-mono text-zinc-700 outline-none focus:border-yellow-400"
                     />
                   </div>
@@ -1325,21 +1335,47 @@ const Settings = () => {
                 <div className="flex flex-wrap items-center gap-2 pt-1">
                   <button
                     type="button"
+                    onClick={() => scanAndPairPrinter('billing')}
+                    disabled={billPairStatus === 'scanning'}
+                    className="flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-2 text-xs font-extrabold text-white hover:bg-zinc-700 transition disabled:opacity-50 cursor-pointer"
+                  >
+                    <Icon d={IC.bluetooth} size={13} />
+                    {billPairStatus === 'scanning' ? 'Scanning…' : 'Scan & Pair Billing Printer'}
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => handleTestPrint('billing')}
-                    className="flex items-center gap-1.5 rounded-lg border border-blue-300 bg-blue-50 px-3.5 py-2 text-xs font-extrabold text-blue-900 hover:bg-blue-100 transition cursor-pointer"
+                    className="flex items-center gap-1.5 rounded-lg border border-yellow-300 bg-yellow-50 px-3 py-2 text-xs font-extrabold text-yellow-900 hover:bg-yellow-100 transition cursor-pointer"
                   >
                     <Icon d={IC.printer} size={13} />
-                    Test Print Receipt via Local Agent
+                    Test Print &amp; Verify Stream
                   </button>
+                  {printers.billingPrinterName && (
+                    <button
+                      type="button"
+                      onClick={() => { setPrinters((p) => ({ ...p, billingPrinterName: '' })); setBillPairStatus('') }}
+                      className="flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-100 transition cursor-pointer"
+                    >
+                      <Icon d={IC.unlink} size={12} />
+                      Remove
+                    </button>
+                  )}
                 </div>
               </div>
 
-              {/* Local Agent Architecture Info */}
+              {/* Common UUID hints */}
               <div className="rounded-xl border border-zinc-100 bg-zinc-50 p-3.5 space-y-1.5">
-                <p className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-500">Local Print Agent Architecture Specs</p>
-                <p className="text-[11px] text-zinc-600">
-                  Print jobs are posted formatted in ESC/POS byte array &amp; plain text directly to your shop&apos;s Local Print Agent at <code className="bg-zinc-200 px-1 py-0.5 rounded font-mono text-[10px]">http://localhost:3000/print</code>.
-                </p>
+                <p className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-500">Common Bluetooth Printer Service UUIDs</p>
+                {[
+                  { label: 'Generic Serial (most EZO/GP58)', uuid: '000018f0-0000-1000-8000-00805f9b34fb' },
+                  { label: 'Nordic UART Service (NUS)', uuid: '6e400001-b5a3-f393-e0a9-e50e24dcca9e' },
+                  { label: 'Generic FFF0 (Xprinter, Rongta)', uuid: '0000fff0-0000-1000-8000-00805f9b34fb' },
+                ].map(({ label, uuid }) => (
+                  <div key={uuid} className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] text-zinc-600 font-medium">{label}</span>
+                    <code className="text-[9px] font-mono text-zinc-500 bg-zinc-100 px-1.5 py-0.5 rounded">{uuid}</code>
+                  </div>
+                ))}
               </div>
 
               {/* Save Button */}

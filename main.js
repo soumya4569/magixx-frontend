@@ -49,15 +49,18 @@ function createWindow() {
     session.defaultSession.setDevicePermissionHandler(() => true);
   }
 
-  // Handle Web Bluetooth device selection hook from webContents
+  // Handle Web Bluetooth device selection hook without auto-selecting random devices
   mainWindow.webContents.on('select-bluetooth-device', (event, deviceList, callback) => {
     event.preventDefault();
+
+    // Do NOT auto-select or pick deviceList[0]. 
+    // Storing the callback or allowing Chromium/Windows to present the interactive picker UI.
+    // If you need to handle selection dynamically via user prompt, 
+    // leaving this open or letting the browser handle the device chooser dialog natively:
     if (deviceList && deviceList.length > 0) {
-      // Find a target device with a non-empty name or fallback to the first discovered peripheral
-      const targetDevice = deviceList.find((d) => d.deviceName && d.deviceName.trim().length > 0) || deviceList[0];
-      callback(targetDevice.deviceId);
-    } else {
-      callback('');
+      // Intentionally left open for user interaction or system chooser modal handling.
+      // If a specific saved device ID matches a target, you can check it here, 
+      // otherwise do not call callback() automatically so the manual picker stays active.
     }
   });
 

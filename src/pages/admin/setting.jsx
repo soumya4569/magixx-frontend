@@ -278,6 +278,7 @@ const Settings = () => {
           NORDIC_UART_UUID,
           '000018f0-0000-1000-8000-00805f9b34fb',
           '0000fff0-0000-1000-8000-00805f9b34fb',
+          '00001101-0000-1000-8000-00805f9b34fb',
         ],
       })
       const deviceName = device.name || 'Unknown Printer'

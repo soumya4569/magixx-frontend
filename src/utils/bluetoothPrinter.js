@@ -254,18 +254,14 @@ export const ensurePrinterConnected = async (printerType, toast = console.log) =
     toast(`Bluetooth stream disconnected. Prompting pairing dialog for ${label}...`, 'info');
     logPrinterDeviceEvent(printerType, name, address, 'PAIRING_REQUIRED', 'Seamless reconnect unavailable; re-prompting Bluetooth dialog');
 
-    const filters = [];
-    if (name) filters.push({ name });
-    if (address) filters.push({ name: address });
-
     const requestOptions = {
-      filters: filters.length > 0 ? filters : undefined,
-      acceptAllDevices: filters.length === 0,
+      acceptAllDevices: true,
       optionalServices: [
         serviceUUID,
         '6e400001-b5a3-f393-e0a9-e50e24dcca9e',
         '000018f0-0000-1000-8000-00805f9b34fb',
         '0000fff0-0000-1000-8000-00805f9b34fb',
+        '00001101-0000-1000-8000-00805f9b34fb',
       ],
     };
 

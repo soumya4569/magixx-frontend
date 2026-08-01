@@ -1295,7 +1295,7 @@ const Settings = () => {
                       <p className="text-[10px] text-zinc-500">Receives KOT slip when &quot;KOT &amp; Print&quot; is clicked in POS</p>
                     </div>
                   </div>
-                  {kotPairStatus === 'paired' && (
+                  {(kotPairStatus === 'paired' || Boolean(printers.kotPrinterName || printers.kotPrinterAddress)) && (
                     <span className="flex items-center gap-1 rounded-full bg-green-100 border border-green-200 px-2.5 py-1 text-[10px] font-extrabold text-green-700">
                       <span className="h-1.5 w-1.5 rounded-full bg-green-500" />Paired
                     </span>
@@ -1346,10 +1346,19 @@ const Settings = () => {
                     <Icon d={IC.printer} size={13} />
                     Test Print &amp; Verify Stream
                   </button>
-                  {printers.kotPrinterName && (
+                  {(printers.kotPrinterName || printers.kotPrinterAddress) && (
                     <button
                       type="button"
-                      onClick={() => { setPrinters((p) => ({ ...p, kotPrinterName: '' })); setKotPairStatus('') }}
+                      onClick={() => {
+                        setPrinters((p) => {
+                          const updated = { ...p, kotPrinterName: '', kotPrinterAddress: '' };
+                          localStorage.setItem('pos_printer_settings', JSON.stringify(updated));
+                          window.dispatchEvent(new Event('storage'));
+                          api.put('/settings', updated).catch(() => {});
+                          return updated;
+                        });
+                        setKotPairStatus('');
+                      }}
                       className="flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-100 transition cursor-pointer"
                     >
                       <Icon d={IC.unlink} size={12} />
@@ -1371,7 +1380,7 @@ const Settings = () => {
                       <p className="text-[10px] text-zinc-500">Receives final receipt when &quot;Checkout &amp; Pay&quot; completes in POS</p>
                     </div>
                   </div>
-                  {billPairStatus === 'paired' && (
+                  {(billPairStatus === 'paired' || Boolean(printers.billingPrinterName || printers.billingPrinterAddress)) && (
                     <span className="flex items-center gap-1 rounded-full bg-green-100 border border-green-200 px-2.5 py-1 text-[10px] font-extrabold text-green-700">
                       <span className="h-1.5 w-1.5 rounded-full bg-green-500" />Paired
                     </span>
@@ -1422,10 +1431,19 @@ const Settings = () => {
                     <Icon d={IC.printer} size={13} />
                     Test Print &amp; Verify Stream
                   </button>
-                  {printers.billingPrinterName && (
+                  {(printers.billingPrinterName || printers.billingPrinterAddress) && (
                     <button
                       type="button"
-                      onClick={() => { setPrinters((p) => ({ ...p, billingPrinterName: '' })); setBillPairStatus('') }}
+                      onClick={() => {
+                        setPrinters((p) => {
+                          const updated = { ...p, billingPrinterName: '', billingPrinterAddress: '' };
+                          localStorage.setItem('pos_printer_settings', JSON.stringify(updated));
+                          window.dispatchEvent(new Event('storage'));
+                          api.put('/settings', updated).catch(() => {});
+                          return updated;
+                        });
+                        setBillPairStatus('');
+                      }}
                       className="flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-100 transition cursor-pointer"
                     >
                       <Icon d={IC.unlink} size={12} />

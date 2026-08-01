@@ -108,6 +108,36 @@ const Settings = () => {
   const [kotPairStatus, setKotPairStatus] = useState('')   // 'scanning' | 'paired' | 'error' | ''
   const [billPairStatus, setBillPairStatus] = useState('') // 'scanning' | 'paired' | 'error' | ''
 
+  // Bluetooth custom device chooser modal states
+  const [availableDevices, setAvailableDevices] = useState([])
+  const [showDeviceModal, setShowDeviceModal] = useState(false)
+
+  useEffect(() => {
+    if (window.electronAPI && typeof window.electronAPI.onBluetoothDevices === 'function') {
+      const unsubscribe = window.electronAPI.onBluetoothDevices((devices) => {
+        setAvailableDevices(devices || [])
+        setShowDeviceModal(true)
+      })
+      return () => {
+        if (unsubscribe) unsubscribe()
+      }
+    }
+  }, [])
+
+  const handleSelectBluetoothDevice = (deviceId) => {
+    if (window.electronAPI && typeof window.electronAPI.selectBluetoothDevice === 'function') {
+      window.electronAPI.selectBluetoothDevice(deviceId)
+    }
+    setShowDeviceModal(false)
+  }
+
+  const handleCancelBluetoothDevice = () => {
+    if (window.electronAPI && typeof window.electronAPI.cancelBluetoothDevice === 'function') {
+      window.electronAPI.cancelBluetoothDevice()
+    }
+    setShowDeviceModal(false)
+  }
+
   // Staff Directory state inside Settings
   const [staff, setStaff] = useState(() => {
     const saved = localStorage.getItem('pos_staff_members')
@@ -1708,6 +1738,70 @@ const Settings = () => {
                 className="flex-1 rounded-xl bg-red-600 py-2.5 text-xs font-extrabold text-white shadow-md hover:bg-red-700 transition disabled:opacity-50 cursor-pointer"
               >
                 {isResetting ? 'Wiping Cache...' : 'Confirm Factory Reset'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Bluetooth Hardware Device Chooser Modal ── */}
+      {showDeviceModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl animate-in fade-in duration-200">
+            <div className="flex items-center justify-between mb-3 border-b border-gray-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-blue-600 font-bold shrink-0">
+                  <Icon d={IC.bluetooth} size={20} />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-gray-900">Select Bluetooth Device</h3>
+                  <p className="text-xs text-gray-400">Discovered peripherals in range</p>
+                </div>
+              </div>
+              <button
+                onClick={handleCancelBluetoothDevice}
+                className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="my-4 max-h-64 overflow-y-auto space-y-2 pr-1">
+              {availableDevices.length === 0 ? (
+                <div className="py-8 text-center text-xs text-gray-500">
+                  Scanning for Bluetooth peripherals... Make sure your thermal printer is turned on and discoverable.
+                </div>
+              ) : (
+                availableDevices.map((dev, idx) => (
+                  <div
+                    key={dev.deviceId || idx}
+                    className="flex items-center justify-between rounded-xl border border-gray-200 p-3 hover:border-blue-500 hover:bg-blue-50/50 transition shadow-2xs"
+                  >
+                    <div className="min-w-0 flex-1 pr-3">
+                      <p className="text-xs font-bold text-gray-900 truncate">
+                        {dev.deviceName || dev.name || 'Unknown Printer'}
+                      </p>
+                      <p className="text-[10px] text-gray-400 font-mono truncate">
+                        ID: {dev.deviceId || 'N/A'}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => handleSelectBluetoothDevice(dev.deviceId)}
+                      className="rounded-lg bg-blue-600 px-3.5 py-1.5 text-xs font-extrabold text-white hover:bg-blue-700 shadow-sm transition shrink-0 cursor-pointer"
+                    >
+                      Connect
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-gray-100">
+              <button
+                onClick={handleCancelBluetoothDevice}
+                className="rounded-xl border border-gray-200 px-4 py-2 text-xs font-bold text-gray-600 hover:bg-gray-100 transition cursor-pointer"
+              >
+                Cancel
               </button>
             </div>
           </div>

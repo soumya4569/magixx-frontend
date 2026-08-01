@@ -20,7 +20,8 @@
     },
     "files": [
       "dist/**/*",
-      "main.js"
+      "main.js",
+      "preload.cjs"
     ],
     "win": {
       "target": [

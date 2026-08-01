@@ -49,19 +49,24 @@ function createWindow() {
     session.defaultSession.setDevicePermissionHandler(() => true);
   }
 
-  // Handle Web Bluetooth device selection hook without auto-selecting random devices
+  // Handle Web Bluetooth device selection hook cleanly
   mainWindow.webContents.on('select-bluetooth-device', (event, deviceList, callback) => {
     event.preventDefault();
+    
+    // Give Windows a few seconds to scan, then pick the first available device
+    const scanInterval = setInterval(() => {
+      if (deviceList && deviceList.length > 0) {
+        clearInterval(scanInterval);
+        const targetDevice = deviceList.find((d) => d.deviceName && d.deviceName.trim().length > 0) || deviceList[0];
+        callback(targetDevice.deviceId);
+      }
+    }, 500);
 
-    // Do NOT auto-select or pick deviceList[0]. 
-    // Storing the callback or allowing Chromium/Windows to present the interactive picker UI.
-    // If you need to handle selection dynamically via user prompt, 
-    // leaving this open or letting the browser handle the device chooser dialog natively:
-    if (deviceList && deviceList.length > 0) {
-      // Intentionally left open for user interaction or system chooser modal handling.
-      // If a specific saved device ID matches a target, you can check it here, 
-      // otherwise do not call callback() automatically so the manual picker stays active.
-    }
+    // Fallback safety timeout after 8 seconds if no device responds
+    setTimeout(() => {
+      clearInterval(scanInterval);
+      callback('');
+    }, 8000);
   });
 
   mainWindow.loadURL('https://magixx-cafe.vercel.app/');

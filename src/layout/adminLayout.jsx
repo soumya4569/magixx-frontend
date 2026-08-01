@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { clearAuthSession, getAuthToken } from '../utils/auth'
 
 /* ── Inline SVG icon primitives ── */
 const Icon = ({ d, size = 18, className = '' }) => (
@@ -173,8 +174,14 @@ const AdminLayout = () => {
 
   const allowedRoutes = ROLE_PERMISSIONS[normalizedRole] || ROLE_PERMISSIONS['Cashier']
 
-  // Route Guard Protection
+  // Route & Auth Guard Protection
   useEffect(() => {
+    const token = getAuthToken()
+    if (!token) {
+      navigate('/', { replace: true })
+      return
+    }
+
     const currentPath = location.pathname
     const isAllowed = allowedRoutes.includes(currentPath) || allowedRoutes.some(p => currentPath.startsWith(p + '/'))
 
@@ -235,8 +242,8 @@ const AdminLayout = () => {
 
   const handleLogout = () => {
     setProfileOpen(false)
-    localStorage.removeItem('pos_auth_token')
-    navigate('/')
+    clearAuthSession()
+    navigate('/', { replace: true })
   }
 
   const handleSwitchCashier = (profile) => {

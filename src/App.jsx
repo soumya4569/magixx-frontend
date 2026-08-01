@@ -9,6 +9,15 @@ import Reports from './pages/admin/reports.jsx'
 import Settings from './pages/admin/setting.jsx'
 import Reservations from './pages/admin/reservations.jsx'
 import Payments from './pages/admin/payments.jsx'
+import { getAuthToken } from './utils/auth'
+
+const ProtectedRoute = ({ children }) => {
+  const token = getAuthToken()
+  if (!token) {
+    return <Navigate to="/" replace />
+  }
+  return children
+}
 
 const App = () => {
   return (
@@ -17,7 +26,13 @@ const App = () => {
       <Route path="/" element={<Login />} />
 
       {/* Authenticated routes sharing AdminLayout */}
-      <Route element={<AdminLayout />}>
+      <Route
+        element={
+          <ProtectedRoute>
+            <AdminLayout />
+          </ProtectedRoute>
+        }
+      >
         <Route path="/order" element={<Order />} />
 
         <Route path="/admin">

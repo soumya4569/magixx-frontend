@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../../services/api'
 import { sendToBluetoothPrinter, checkPrinterStreamStatus } from '../../utils/bluetoothPrinter'
+import { clearAuthSession } from '../../utils/auth'
 
 
 /* ── Inline SVG icon primitives ── */
@@ -687,12 +688,11 @@ const Settings = () => {
   }
 
   const handleLogout = () => {
-    localStorage.removeItem('pos_active_user')
-    localStorage.removeItem('pos_auth_token')
+    clearAuthSession()
     showToast('Logging out...')
     setTimeout(() => {
-      navigate('/login')
-    }, 300)
+      navigate('/', { replace: true })
+    }, 200)
   }
 
   // Get initials for fallback avatar

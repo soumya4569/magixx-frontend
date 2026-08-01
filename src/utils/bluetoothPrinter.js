@@ -108,52 +108,54 @@ const attachDisconnectListener = (device, printerType) => {
 
 /**
  * Resolve GATT service and writable characteristic from a connected server.
+ * Scans all primary services dynamically to locate writable ESC/POS characteristics.
  */
 const resolveServiceAndCharacteristic = async (server, primaryUUID) => {
-  let service = null;
-
   try {
-    service = await server.getPrimaryService(primaryUUID);
-  } catch {
+    let services = [];
+    try {
+      services = await server.getPrimaryServices();
+    } catch {
+      if (primaryUUID) {
+        try {
+          const s = await server.getPrimaryService(primaryUUID);
+          services = [s];
+        } catch { /* continue */ }
+      }
+    }
+
     const fallbackUUIDs = [
       '6e400001-b5a3-f393-e0a9-e50e24dcca9e',
       '000018f0-0000-1000-8000-00805f9b34fb',
       '0000fff0-0000-1000-8000-00805f9b34fb',
+      '00001101-0000-1000-8000-00805f9b34fb',
     ];
+
     for (const uuid of fallbackUUIDs) {
+      if (!services.some((s) => s.uuid === uuid)) {
+        try {
+          const s = await server.getPrimaryService(uuid);
+          if (s) services.push(s);
+        } catch { /* continue */ }
+      }
+    }
+
+    for (const service of services) {
       try {
-        service = await server.getPrimaryService(uuid);
-        break;
+        const characteristics = await service.getCharacteristics();
+        const writeChar = characteristics.find(
+          (c) => c.properties.write || c.properties.writeWithoutResponse
+        );
+        if (writeChar) {
+          return { service, characteristic: writeChar };
+        }
       } catch { /* continue */ }
     }
+  } catch (e) {
+    console.warn('[BluetoothPrinter] Service/characteristic resolution failed:', e);
   }
 
-  if (!service) return { service: null, characteristic: null };
-
-  let characteristic = null;
-  const writeUUIDs = [
-    '000018f1-0000-1000-8000-00805f9b34fb',
-    '6e400002-b5a3-f393-e0a9-e50e24dcca9e',
-    '0000fff2-0000-1000-8000-00805f9b34fb',
-  ];
-
-  for (const charUUID of writeUUIDs) {
-    try {
-      characteristic = await service.getCharacteristic(charUUID);
-      break;
-    } catch { /* continue */ }
-  }
-
-  if (!characteristic) {
-    try {
-      const characteristics = await service.getCharacteristics();
-      characteristic = characteristics.find(
-        (c) => c.properties.write || c.properties.writeWithoutResponse
-      );
-    } catch { /* ignore */ }
-  }
-
-  return { service, characteristic };
+  return { service: null, characteristic: null };
 };
 
 /**
@@ -168,7 +170,9 @@ export const attemptSeamlessReconnect = async (printerType) => {
       const allowedDevices = await navigator.bluetooth.getDevices();
       if (allowedDevices && allowedDevices.length > 0) {
         targetDevice = allowedDevices.find(
-          (d) => (address && d.id === address) || (name && d.name === name)
+          (d) =>
+            (address && d.id === address) ||
+            (name && d.name && d.name.toLowerCase() === name.toLowerCase())
         );
       }
     }
@@ -176,7 +180,18 @@ export const attemptSeamlessReconnect = async (printerType) => {
     if (!targetDevice) return null;
 
     console.log(`[BluetoothPrinter] Attempting seamless Web Bluetooth reconnect to "${targetDevice.name || targetDevice.id}"...`);
-    const server = await targetDevice.gatt.connect();
+    let server = null;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        server = await targetDevice.gatt.connect();
+        if (server && server.connected) break;
+      } catch (err) {
+        if (attempt === 2) throw err;
+        await new Promise((r) => setTimeout(r, 300));
+      }
+    }
+
+    if (!server || !server.connected) return null;
 
     const { service, characteristic } = await resolveServiceAndCharacteristic(server, serviceUUID);
     if (!service || !characteristic) {

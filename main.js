@@ -44,7 +44,7 @@ function createWindow() {
     }
   });
 
-  mainWindow.loadURL('https://https://magixx-cafe.vercel.app/');
+  mainWindow.loadURL('https://magixx-cafe.vercel.app/');
 }
 
 app.whenReady().then(() => {

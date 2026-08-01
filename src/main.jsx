@@ -4,8 +4,8 @@ import { BrowserRouter } from 'react-router-dom'
 import './index.css'
 import App from './App.jsx'
 
-// Register PWA Service Worker
-if ('serviceWorker' in navigator) {
+// Register PWA Service Worker (only on HTTP/HTTPS to prevent crashes under Electron file:// protocol)
+if ('serviceWorker' in navigator && window.location.protocol !== 'file:') {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js')
       .then((reg) => {

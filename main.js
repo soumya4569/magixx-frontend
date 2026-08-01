@@ -1,10 +1,4 @@
 import { app, BrowserWindow } from 'electron';
-import path from 'path';
-import fs from 'fs';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 function createWindow() {
   const mainWindow = new BrowserWindow({
@@ -17,14 +11,7 @@ function createWindow() {
     },
   });
 
-  const distIndexPath = path.join(__dirname, 'dist', 'index.html');
-
-  if (fs.existsSync(distIndexPath)) {
-    mainWindow.loadFile(distIndexPath);
-  } else {
-    // Development fallback if local dist bundle has not been built yet
-    mainWindow.loadURL('http://localhost:5173');
-  }
+  mainWindow.loadURL('https://magixx-frontend.vercel.app/');
 }
 
 app.whenReady().then(() => {

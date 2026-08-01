@@ -15,6 +15,9 @@
   "build": {
     "appId": "com.magixx.cafe",
     "productName": "MAGIXX Cafe POS",
+    "directories": {
+      "output": "release"
+    },
     "files": [
       "dist/**/*",
       "main.js"

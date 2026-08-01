@@ -1,6 +1,6 @@
 import { app, BrowserWindow, session } from 'electron';
 
-// Enable Web Bluetooth switches in Electron runtime
+// Enable Web Bluetooth flags in Electron runtime
 app.commandLine.appendSwitch('enable-experimental-web-platform-features');
 app.commandLine.appendSwitch('enable-web-bluetooth');
 
@@ -32,6 +32,23 @@ function createWindow() {
     callback(true);
   });
 
+  // Authorize permission checks for Bluetooth hardware
+  session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
+    if (
+      permission === 'bluetooth' ||
+      permission === 'bluetoothScanning' ||
+      permission === 'devices'
+    ) {
+      return true;
+    }
+    return true;
+  });
+
+  // Authorize device permissions if handler method exists
+  if (session.defaultSession.setDevicePermissionHandler) {
+    session.defaultSession.setDevicePermissionHandler(() => true);
+  }
+
   // Handle Web Bluetooth device selection hook from webContents
   mainWindow.webContents.on('select-bluetooth-device', (event, deviceList, callback) => {
     event.preventDefault();
@@ -44,7 +61,7 @@ function createWindow() {
     }
   });
 
-  mainWindow.loadURL('https://magixx-cafe.vercel.app/');
+  mainWindow.loadURL('https://magixx-frontend.vercel.app/');
 }
 
 app.whenReady().then(() => {

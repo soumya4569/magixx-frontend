@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../../services/api'
 
@@ -25,6 +25,37 @@ const ICONS = {
 const Login = () => {
   const navigate = useNavigate()
   const [role, setRole] = useState('Admin') // 'Admin' | 'Manager' | 'Cashier'
+
+  // Auth Guard: Auto-redirect active authenticated sessions to prevent back-button loops
+  useEffect(() => {
+    const token =
+      localStorage.getItem('token') ||
+      localStorage.getItem('pos_auth_token') ||
+      sessionStorage.getItem('token') ||
+      sessionStorage.getItem('pos_auth_token')
+
+    if (token) {
+      let activeRole = 'Admin'
+      try {
+        const user = JSON.parse(
+          localStorage.getItem('userInfo') ||
+          localStorage.getItem('pos_active_user') ||
+          '{}'
+        )
+        activeRole = user.role || 'Admin'
+      } catch {
+        activeRole = 'Admin'
+      }
+
+      if (activeRole === 'Admin') {
+        navigate('/admin/dashboard', { replace: true })
+      } else if (activeRole === 'Manager') {
+        navigate('/admin/menu', { replace: true })
+      } else {
+        navigate('/order', { replace: true })
+      }
+    }
+  }, [navigate])
 
   // Form State - Mobile or Email Flexible Identifier
   const [identifier, setIdentifier] = useState('')
@@ -87,14 +118,14 @@ const Login = () => {
 
       setIsLoading(false)
 
-      // Role-Based Navigation
+      // Role-Based Navigation with replace: true to prevent browser history loops
       const activeRole = data.role || role
       if (activeRole === 'Admin') {
-        navigate('/admin/dashboard')
+        navigate('/admin/dashboard', { replace: true })
       } else if (activeRole === 'Manager') {
-        navigate('/admin/menu')
+        navigate('/admin/menu', { replace: true })
       } else {
-        navigate('/order')
+        navigate('/order', { replace: true })
       }
     } catch (err) {
       setIsLoading(false)

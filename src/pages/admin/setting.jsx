@@ -108,7 +108,18 @@ const Settings = () => {
   const [printers, setPrinters] = useState(() => {
     try {
       const saved = localStorage.getItem('pos_printer_settings')
-      return (saved && saved !== 'undefined') ? JSON.parse(saved) : DEFAULT_PRINTERS
+      if (saved && saved !== 'undefined') {
+        const parsed = JSON.parse(saved)
+        return {
+          kotPrinterName: parsed.kotPrinterName ?? '',
+          kotPrinterAddress: parsed.kotPrinterAddress ?? '',
+          kotPrinterServiceUUID: parsed.kotPrinterServiceUUID || GENERIC_SERIAL_UUID,
+          billingPrinterName: parsed.billingPrinterName ?? '',
+          billingPrinterAddress: parsed.billingPrinterAddress ?? '',
+          billingPrinterServiceUUID: parsed.billingPrinterServiceUUID || GENERIC_SERIAL_UUID,
+        }
+      }
+      return DEFAULT_PRINTERS
     } catch {
       return DEFAULT_PRINTERS
     }

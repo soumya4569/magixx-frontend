@@ -1051,13 +1051,10 @@ const Settings = () => {
                       <p className="text-[10px] text-zinc-500">Receives KOT slip when &quot;KOT &amp; Print&quot; is clicked in POS</p>
                     </div>
                   </div>
-                  {(kotPairStatus === 'paired' || Boolean(printers.kotPrinterName || printers.kotPrinterAddress)) && (
+                  {Boolean(printers.kotPrinterName || printers.kotPrinterAddress) && (
                     <span className="flex items-center gap-1 rounded-full bg-green-100 border border-green-200 px-2.5 py-1 text-[10px] font-extrabold text-green-700">
                       <span className="h-1.5 w-1.5 rounded-full bg-green-500" />Configured
                     </span>
-                  )}
-                  {kotPairStatus === 'scanning' && (
-                    <span className="rounded-full bg-blue-100 border border-blue-200 px-2.5 py-1 text-[10px] font-extrabold text-blue-700 animate-pulse">Scanning…</span>
                   )}
                 </div>
 
@@ -1111,17 +1108,6 @@ const Settings = () => {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 pt-1">
-                  {navigator.bluetooth && (
-                    <button
-                      type="button"
-                      onClick={() => scanAndPairPrinter('kot')}
-                      disabled={kotPairStatus === 'scanning'}
-                      className="flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-2 text-xs font-extrabold text-white hover:bg-zinc-700 transition disabled:opacity-50 cursor-pointer"
-                    >
-                      <Icon d={IC.bluetooth} size={13} />
-                      {kotPairStatus === 'scanning' ? 'Scanning…' : 'Scan & Pair Web BT'}
-                    </button>
-                  )}
                   <button
                     type="button"
                     onClick={() => handleTestPrint('kot')}
@@ -1141,7 +1127,6 @@ const Settings = () => {
                           api.put('/settings', updated).catch(() => {});
                           return updated;
                         });
-                        setKotPairStatus('');
                       }}
                       className="flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-100 transition cursor-pointer"
                     >
@@ -1164,13 +1149,10 @@ const Settings = () => {
                       <p className="text-[10px] text-zinc-500">Receives final receipt when &quot;Checkout &amp; Pay&quot; completes in POS</p>
                     </div>
                   </div>
-                  {(billPairStatus === 'paired' || Boolean(printers.billingPrinterName || printers.billingPrinterAddress)) && (
+                  {Boolean(printers.billingPrinterName || printers.billingPrinterAddress) && (
                     <span className="flex items-center gap-1 rounded-full bg-green-100 border border-green-200 px-2.5 py-1 text-[10px] font-extrabold text-green-700">
                       <span className="h-1.5 w-1.5 rounded-full bg-green-500" />Configured
                     </span>
-                  )}
-                  {billPairStatus === 'scanning' && (
-                    <span className="rounded-full bg-blue-100 border border-blue-200 px-2.5 py-1 text-[10px] font-extrabold text-blue-700 animate-pulse">Scanning…</span>
                   )}
                 </div>
 
@@ -1224,17 +1206,6 @@ const Settings = () => {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 pt-1">
-                  {navigator.bluetooth && (
-                    <button
-                      type="button"
-                      onClick={() => scanAndPairPrinter('billing')}
-                      disabled={billPairStatus === 'scanning'}
-                      className="flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-2 text-xs font-extrabold text-white hover:bg-zinc-700 transition disabled:opacity-50 cursor-pointer"
-                    >
-                      <Icon d={IC.bluetooth} size={13} />
-                      {billPairStatus === 'scanning' ? 'Scanning…' : 'Scan & Pair Web BT'}
-                    </button>
-                  )}
                   <button
                     type="button"
                     onClick={() => handleTestPrint('billing')}
@@ -1255,7 +1226,6 @@ const Settings = () => {
                           api.put('/settings', updated).catch(() => {});
                           return updated;
                         });
-                        setBillPairStatus('');
                       }}
                       className="flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-100 transition cursor-pointer"
                     >
@@ -1265,6 +1235,7 @@ const Settings = () => {
                   )}
                 </div>
               </div>
+
 
               {/* Common UUID hints */}
               <div className="rounded-xl border border-zinc-100 bg-zinc-50 p-3.5 space-y-1.5">

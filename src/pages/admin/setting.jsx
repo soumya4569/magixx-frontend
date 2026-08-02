@@ -1333,7 +1333,7 @@ const Settings = () => {
                       className="flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-2 text-xs font-extrabold text-white hover:bg-zinc-700 transition disabled:opacity-50 cursor-pointer"
                     >
                       <Icon d={IC.bluetooth} size={13} />
-                      {kotPairStatus === 'scanning' ? 'Scanning…' : 'Scan & Pair Web BT'}
+                      {kotPairStatus === 'scanning' ? 'Scanning…' : 'Scan & Pair KOT Printer'}
                     </button>
                   )}
                   <button
@@ -1448,7 +1448,7 @@ const Settings = () => {
                       className="flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-2 text-xs font-extrabold text-white hover:bg-zinc-700 transition disabled:opacity-50 cursor-pointer"
                     >
                       <Icon d={IC.bluetooth} size={13} />
-                      {billPairStatus === 'scanning' ? 'Scanning…' : 'Scan & Pair Web BT'}
+                      {billPairStatus === 'scanning' ? 'Scanning…' : 'Scan & Pair Billing Printer'}
                     </button>
                   )}
                   <button

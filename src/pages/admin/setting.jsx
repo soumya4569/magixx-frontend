@@ -4,7 +4,6 @@ import api from '../../services/api'
 import { sendToBluetoothPrinter, checkPrinterStreamStatus } from '../../utils/bluetoothPrinter'
 import { clearAuthSession } from '../../utils/auth'
 
-
 /* ── Inline SVG icon primitives ── */
 const Icon = ({ d, size = 16, className = '' }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
@@ -18,7 +17,7 @@ const IC = {
   store:    'M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z M9 22V12h6v10',
   percent:  'M19 5L5 19 M6.5 6.5a1.5 1.5 0 100-3 1.5 1.5 0 000 3z M17.5 17.5a1.5 1.5 0 100-3 1.5 1.5 0 000 3z',
   users:    'M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2 M9 11a4 4 0 100-8 4 4 0 00-4 4v2 M23 21v-2a4 4 0 00-3-3.87 M16 3.13a4 4 0 010 7.75',
-  database: 'M12 22c5.523 0 10-1.79 10-4V6c0-2.21-4.477-4-10-4S2 3.79 2 6v12c0 2.21 4.477 4 10 4z M2 6c0 2.21 4.477 4 10 4s10-1.79 10-4 M2 12c0 2.21 4.477 4 10 4s10-1.79 10-4 M2 18c0 2.21 4.477 4 10 4s10-1.79 10-4',
+  database: 'M12 22c5.523 0 10-1.79 10-4V6c0-2.21-4.477-4-10-4S2 3.79 2 6v12c0 2.21 4.477 4 10 4s10-1.79 10-4 M2 6c0 2.21 4.477 4 10 4s10-1.79 10-4 M2 18c0 2.21 4.477 4 10 4s10-1.79 10-4',
   check:    'M20 6L9 17l-5-5',
   trash:    'M3 6h18 M8 6V4h8v2 M19 6l-1 14H6L5 6',
   upload:   'M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12',
@@ -52,8 +51,6 @@ const DEFAULT_BILLING = {
   footerNotes: 'THANK YOU FOR VISITING MAGIXX! HAVE A SWEET DAY • VISIT AGAIN',
 }
 
-// Default Nordic UART / Generic Serial Bluetooth UUID used by most thermal printers
-const NORDIC_UART_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e'
 const GENERIC_SERIAL_UUID = '000018f0-0000-1000-8000-00805f9b34fb'
 
 const DEFAULT_PRINTERS = {
@@ -88,26 +85,70 @@ const Settings = () => {
   const [isEditing, setIsEditing] = useState(false)
   const [showResetModal, setShowResetModal] = useState(false)
   const [isResetting, setIsResetting] = useState(false)
-  
-  // States
+
+  // Safe localStorage Initializers wrapped in try/catch to prevent JSON parse crashes
   const [store, setStore] = useState(() => {
-    const saved = localStorage.getItem('pos_store_settings')
-    return saved ? JSON.parse(saved) : DEFAULT_STORE
+    try {
+      const saved = localStorage.getItem('pos_store_settings')
+      return (saved && saved !== 'undefined') ? JSON.parse(saved) : DEFAULT_STORE
+    } catch {
+      return DEFAULT_STORE
+    }
   })
 
   const [billing, setBilling] = useState(() => {
-    const saved = localStorage.getItem('pos_billing_settings')
-    return saved ? JSON.parse(saved) : DEFAULT_BILLING
+    try {
+      const saved = localStorage.getItem('pos_billing_settings')
+      return (saved && saved !== 'undefined') ? JSON.parse(saved) : DEFAULT_BILLING
+    } catch {
+      return DEFAULT_BILLING
+    }
   })
 
   const [printers, setPrinters] = useState(() => {
-    const saved = localStorage.getItem('pos_printer_settings')
-    return saved ? JSON.parse(saved) : DEFAULT_PRINTERS
+    try {
+      const saved = localStorage.getItem('pos_printer_settings')
+      return (saved && saved !== 'undefined') ? JSON.parse(saved) : DEFAULT_PRINTERS
+    } catch {
+      return DEFAULT_PRINTERS
+    }
   })
 
-  // Electron Native system printers state
+  const [staff, setStaff] = useState(() => {
+    try {
+      const saved = localStorage.getItem('pos_staff_members')
+      return (saved && saved !== 'undefined' && Array.isArray(JSON.parse(saved))) ? JSON.parse(saved) : []
+    } catch {
+      return []
+    }
+  })
+
+  // Electron Native System Printers state
   const [systemPrinters, setSystemPrinters] = useState([])
 
+  // Bluetooth Pairing Modal & Status States
+  const [showDeviceModal, setShowDeviceModal] = useState(false)
+  const [availableDevices, setAvailableDevices] = useState([])
+  const [targetPrinterType, setTargetPrinterType] = useState('kot')
+  const [kotPairStatus, setKotPairStatus] = useState('')
+  const [billPairStatus, setBillPairStatus] = useState('')
+
+  // Toast Handler
+  const [toastMsg, setToastMsg] = useState('')
+  const showToast = (msg) => {
+    setToastMsg(msg)
+    setTimeout(() => setToastMsg(''), 3000)
+  }
+
+  // Safe Object Normalizations for Render Immunity
+  const safeStore = { ...DEFAULT_STORE, ...(store || {}) }
+  const safeBilling = { ...DEFAULT_BILLING, ...(billing || {}) }
+  const safePrinters = { ...DEFAULT_PRINTERS, ...(printers || {}) }
+  const safeStaff = Array.isArray(staff) ? staff : []
+  const safeSystemPrinters = Array.isArray(systemPrinters) ? systemPrinters : []
+  const safeAvailableDevices = Array.isArray(availableDevices) ? availableDevices : []
+
+  // Load installed OS printers if running inside Electron
   useEffect(() => {
     if (window.electronAPI && typeof window.electronAPI.getSystemPrinters === 'function') {
       window.electronAPI.getSystemPrinters().then((printersList) => {
@@ -118,20 +159,217 @@ const Settings = () => {
     }
   }, [])
 
+  // Listen for Electron IPC bluetooth device lists if enabled
+  useEffect(() => {
+    if (window.electronAPI && typeof window.electronAPI.onBluetoothDeviceList === 'function') {
+      const cleanup = window.electronAPI.onBluetoothDeviceList((deviceList) => {
+        setAvailableDevices(deviceList || [])
+        setShowDeviceModal(true)
+      })
+      return () => {
+        if (typeof cleanup === 'function') cleanup()
+      }
+    }
+  }, [])
 
+  // Sync staff members from backend API
+  const fetchStaffData = async () => {
+    try {
+      const res = await api.get('/users')
+      if (res.data && Array.isArray(res.data)) {
+        const formatted = res.data.map(u => ({
+          id: u._id || u.id,
+          _id: u._id || u.id,
+          name: u.name || '',
+          phone: u.phone || '',
+          email: u.email || `${(u.name || 'user').toLowerCase().replace(/\s+/g, '')}@magixx.com`,
+          role: u.role || 'Cashier',
+          status: u.status || 'active',
+          img: u.avatar || null,
+          avatar: u.avatar || null,
+          since: u.createdAt ? new Date(u.createdAt).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }) : 'Jan 2024'
+        }))
+        setStaff(formatted)
+        localStorage.setItem('pos_staff_members', JSON.stringify(formatted))
+      }
+    } catch (err) {
+      console.warn('Could not fetch staff from backend, relying on local storage:', err.message)
+    }
+  }
 
-  // Native Print Execution Verification
+  // Sync backend settings
+  const fetchBackendSettings = async () => {
+    try {
+      const res = await api.get('/settings')
+      if (res.data) {
+        if (res.data.storeName) {
+          setStore(prev => {
+            const updated = { ...DEFAULT_STORE, ...(prev || {}), storeName: res.data.storeName }
+            localStorage.setItem('pos_store_settings', JSON.stringify(updated))
+            return updated
+          })
+        }
+        if (res.data.gstin || res.data.taxRate) {
+          setBilling(prev => {
+            const safePrev = prev || DEFAULT_BILLING
+            const updated = {
+              ...DEFAULT_BILLING,
+              ...safePrev,
+              gstin: res.data.gstin || safePrev.gstin,
+              taxRate: res.data.taxRate ? String(res.data.taxRate) : safePrev.taxRate,
+              taxType: res.data.taxType || safePrev.taxType,
+              currency: res.data.currency || safePrev.currency,
+              invoiceHeader: res.data.invoiceHeader || safePrev.invoiceHeader,
+              invoiceFooter: res.data.invoiceFooter || safePrev.invoiceFooter,
+            }
+            localStorage.setItem('pos_billing_settings', JSON.stringify(updated))
+            return updated
+          })
+        }
+        if (res.data.kotPrinterName || res.data.billingPrinterName) {
+          setPrinters(prev => {
+            const safePrev = prev || DEFAULT_PRINTERS
+            const updated = {
+              ...DEFAULT_PRINTERS,
+              ...safePrev,
+              kotPrinterName: res.data.kotPrinterName || safePrev.kotPrinterName,
+              kotPrinterAddress: res.data.kotPrinterAddress || safePrev.kotPrinterAddress,
+              kotPrinterServiceUUID: res.data.kotPrinterServiceUUID || safePrev.kotPrinterServiceUUID,
+              billingPrinterName: res.data.billingPrinterName || safePrev.billingPrinterName,
+              billingPrinterAddress: res.data.billingPrinterAddress || safePrev.billingPrinterAddress,
+              billingPrinterServiceUUID: res.data.billingPrinterServiceUUID || safePrev.billingPrinterServiceUUID,
+            }
+            localStorage.setItem('pos_printer_settings', JSON.stringify(updated))
+            return updated
+          })
+        }
+      }
+    } catch (err) {
+      console.warn('Could not fetch backend settings:', err.message)
+    }
+  }
+
+  useEffect(() => {
+    fetchStaffData()
+    fetchBackendSettings()
+  }, [])
+
+  useEffect(() => {
+    if (staff && Array.isArray(staff) && staff.length > 0) {
+      localStorage.setItem('pos_staff_members', JSON.stringify(staff))
+    }
+  }, [staff])
+
+  // Bluetooth Pairing Request Handler with localStorage persistence & storage events
+  const scanAndPairPrinter = async (type) => {
+    setTargetPrinterType(type)
+    if (type === 'kot') setKotPairStatus('scanning')
+    else setBillPairStatus('scanning')
+
+    showToast(`Scanning for Bluetooth printer (${type.toUpperCase()})...`)
+
+    try {
+      if (navigator.bluetooth && typeof navigator.bluetooth.requestDevice === 'function') {
+        const device = await navigator.bluetooth.requestDevice({
+          acceptAllDevices: true,
+          optionalServices: [
+            GENERIC_SERIAL_UUID,
+            '6e400001-b5a3-f393-e0a9-e50e24dcca9e',
+            '0000fff0-0000-1000-8000-00805f9b34fb',
+          ],
+        })
+
+        if (device) {
+          const deviceName = device.name || 'BT Printer'
+          const deviceId = device.id || ''
+
+          setPrinters(prev => {
+            const safePrev = prev || DEFAULT_PRINTERS
+            const updated = {
+              ...safePrev,
+              ...(type === 'kot'
+                ? { kotPrinterName: deviceName, kotPrinterAddress: deviceId }
+                : { billingPrinterName: deviceName, billingPrinterAddress: deviceId })
+            }
+            localStorage.setItem('pos_printer_settings', JSON.stringify(updated))
+            window.dispatchEvent(new Event('storage'))
+            return updated
+          })
+
+          if (type === 'kot') setKotPairStatus('paired')
+          else setBillPairStatus('paired')
+
+          showToast(`Successfully paired ${deviceName} for ${type.toUpperCase()}!`)
+
+          api.put('/settings', {
+            ...(type === 'kot'
+              ? { kotPrinterName: deviceName, kotPrinterAddress: deviceId }
+              : { billingPrinterName: deviceName, billingPrinterAddress: deviceId }),
+          }).catch(console.warn)
+        }
+      } else {
+        showToast('Web Bluetooth is not supported in this environment. Select an OS printer from the dropdown.')
+        if (type === 'kot') setKotPairStatus('')
+        else setBillPairStatus('')
+      }
+    } catch (err) {
+      console.warn('Bluetooth pairing cancelled or error:', err?.message)
+      showToast(`Pairing cancelled or error: ${err?.message || 'Cancelled'}`)
+      if (type === 'kot') setKotPairStatus('')
+      else setBillPairStatus('')
+    }
+  }
+
+  const handleSelectBluetoothDevice = (deviceId, deviceName) => {
+    try {
+      setPrinters(prev => {
+        const safePrev = prev || DEFAULT_PRINTERS
+        const updated = {
+          ...safePrev,
+          ...(targetPrinterType === 'kot'
+            ? { kotPrinterName: deviceName, kotPrinterAddress: deviceId }
+            : { billingPrinterName: deviceName, billingPrinterAddress: deviceId })
+        }
+        localStorage.setItem('pos_printer_settings', JSON.stringify(updated))
+        window.dispatchEvent(new Event('storage'))
+        return updated
+      })
+
+      if (window.electronAPI && typeof window.electronAPI.chooseBluetoothDevice === 'function') {
+        window.electronAPI.chooseBluetoothDevice(deviceId)
+      }
+
+      setShowDeviceModal(false)
+      if (targetPrinterType === 'kot') setKotPairStatus('paired')
+      else setBillPairStatus('paired')
+
+      showToast(`Connected ${deviceName}!`)
+    } catch (e) {
+      console.error('Error selecting bluetooth device:', e)
+    }
+  }
+
+  const handleCancelBluetoothDevice = () => {
+    if (window.electronAPI && typeof window.electronAPI.cancelBluetoothDevice === 'function') {
+      window.electronAPI.cancelBluetoothDevice()
+    }
+    setShowDeviceModal(false)
+    if (targetPrinterType === 'kot') setKotPairStatus('')
+    else setBillPairStatus('')
+  }
+
+  // Native & Bluetooth Test Printing Handler
   const handleTestPrint = async (printerType) => {
     const label = printerType === 'kot' ? 'Kitchen KOT' : 'Counter Billing'
-    showToast(`Sending native test print job to ${label}...`)
+    showToast(`Sending test print job to ${label}...`)
 
     const sampleReceipt = [
       '================================',
       `   MAGIXX - ${label.toUpperCase()} TEST`,
       '================================',
-      `Printer: ${printerType === 'kot' ? (printers.kotPrinterName || 'Default System Printer') : (printers.billingPrinterName || 'Default System Printer')}`,
+      `Printer: ${printerType === 'kot' ? (safePrinters.kotPrinterName || 'Default System Printer') : (safePrinters.billingPrinterName || 'Default System Printer')}`,
       `Time: ${new Date().toLocaleTimeString()}`,
-      `Status: ELECTRON NATIVE IPC PRINT`,
+      `Status: TEST PRINT OK`,
       '--------------------------------',
       '*** TEST RECEIPT PRINT OK ***',
       '================================',
@@ -143,36 +381,24 @@ const Settings = () => {
     }
   }
 
-
   // Save printer config to localStorage and backend
   const savePrinterSettings = async () => {
-    localStorage.setItem('pos_printer_settings', JSON.stringify(printers))
+    localStorage.setItem('pos_printer_settings', JSON.stringify(safePrinters))
     window.dispatchEvent(new Event('storage'))
     try {
       await api.put('/settings', {
-        kotPrinterName: printers.kotPrinterName,
-        kotPrinterAddress: printers.kotPrinterAddress,
-        kotPrinterServiceUUID: printers.kotPrinterServiceUUID,
-        billingPrinterName: printers.billingPrinterName,
-        billingPrinterAddress: printers.billingPrinterAddress,
-        billingPrinterServiceUUID: printers.billingPrinterServiceUUID,
+        kotPrinterName: safePrinters.kotPrinterName,
+        kotPrinterAddress: safePrinters.kotPrinterAddress,
+        kotPrinterServiceUUID: safePrinters.kotPrinterServiceUUID,
+        billingPrinterName: safePrinters.billingPrinterName,
+        billingPrinterAddress: safePrinters.billingPrinterAddress,
+        billingPrinterServiceUUID: safePrinters.billingPrinterServiceUUID,
       })
     } catch (err) {
       console.warn('Could not save printer settings to backend:', err.message)
     }
     showToast('Printer configuration saved successfully!')
   }
-
-  useEffect(() => {
-    fetchStaffData()
-    fetchBackendSettings()
-  }, [])
-
-  useEffect(() => {
-    if (staff.length > 0) {
-      localStorage.setItem('pos_staff_members', JSON.stringify(staff))
-    }
-  }, [staff])
 
   // Staff Modal States
   const [isStaffModalOpen, setIsStaffModalOpen] = useState(false)
@@ -184,14 +410,7 @@ const Settings = () => {
   const fileInputRef = useRef(null)
   const editFileInputRef = useRef(null)
 
-  const [toastMsg, setToastMsg] = useState('')
-
-  const showToast = (msg) => {
-    setToastMsg(msg)
-    setTimeout(() => setToastMsg(''), 3000)
-  }
-
-  // File to base64 Data URL converter for persistent photo uploads
+  // File to base64 Data URL converter for photos
   const handlePhotoSelect = (e, setFormState) => {
     const file = e.target.files[0]
     if (!file) return
@@ -212,33 +431,41 @@ const Settings = () => {
     e.preventDefault()
     try {
       await api.put('/settings', {
-        brandName: store.brandName,
-        subtitle: store.subtitle,
-        storeName: store.storeName,
-        phone: store.phone,
-        email: store.email,
-        address: store.address,
+        brandName: safeStore.brandName,
+        subtitle: safeStore.subtitle,
+        storeName: safeStore.storeName,
+        phone: safeStore.phone,
+        email: safeStore.email,
+        address: safeStore.address,
       })
     } catch (err) {
       console.warn('Backend store settings save warning:', err.message)
     }
-    localStorage.setItem('pos_store_settings', JSON.stringify(store))
+    localStorage.setItem('pos_store_settings', JSON.stringify(safeStore))
     window.dispatchEvent(new Event('storage'))
     showToast('Store Profile configuration updated and synced to backend!')
     setIsEditing(false)
   }
 
   const cancelStoreSettings = () => {
-    const saved = localStorage.getItem('pos_store_settings')
-    setStore(saved ? JSON.parse(saved) : DEFAULT_STORE)
+    try {
+      const saved = localStorage.getItem('pos_store_settings')
+      setStore((saved && saved !== 'undefined') ? JSON.parse(saved) : DEFAULT_STORE)
+    } catch {
+      setStore(DEFAULT_STORE)
+    }
     setIsEditing(false)
   }
 
   useEffect(() => {
     if (activeTab !== 'store') {
       setIsEditing(false)
-      const saved = localStorage.getItem('pos_store_settings')
-      setStore(saved ? JSON.parse(saved) : DEFAULT_STORE)
+      try {
+        const saved = localStorage.getItem('pos_store_settings')
+        setStore((saved && saved !== 'undefined') ? JSON.parse(saved) : DEFAULT_STORE)
+      } catch {
+        setStore(DEFAULT_STORE)
+      }
     }
   }, [activeTab])
 
@@ -247,20 +474,20 @@ const Settings = () => {
     e.preventDefault()
     try {
       await api.put('/settings', {
-        gstin: billing.gstin,
-        invoiceHeader: billing.invoiceHeader,
-        invoiceFooter: billing.invoiceFooter || billing.footerNotes,
-        taxRate: Number(billing.taxRate),
-        taxType: billing.taxType,
-        currency: billing.currency,
-        storeName: store.storeName,
+        gstin: safeBilling.gstin,
+        invoiceHeader: safeBilling.invoiceHeader,
+        invoiceFooter: safeBilling.invoiceFooter || safeBilling.footerNotes,
+        taxRate: Number(safeBilling.taxRate),
+        taxType: safeBilling.taxType,
+        currency: safeBilling.currency,
+        storeName: safeStore.storeName,
       })
     } catch (err) {
       console.warn('Backend settings save warning:', err.message)
     }
     const updatedBilling = {
-      ...billing,
-      footerNotes: billing.invoiceFooter || billing.footerNotes,
+      ...safeBilling,
+      footerNotes: safeBilling.invoiceFooter || safeBilling.footerNotes,
     }
     setBilling(updatedBilling)
     localStorage.setItem('pos_billing_settings', JSON.stringify(updatedBilling))
@@ -270,7 +497,7 @@ const Settings = () => {
 
   // Staff Management Actions
   const toggleStaffStatus = async (id) => {
-    const member = staff.find((s) => (s._id || s.id) === id)
+    const member = safeStaff.find((s) => (s._id || s.id) === id)
     if (!member) return
     const newStatus = member.status === 'active' ? 'offline' : 'active'
 
@@ -283,7 +510,7 @@ const Settings = () => {
     }
 
     setStaff((prev) =>
-      prev.map((s) => ((s._id || s.id) === id ? { ...s, status: newStatus } : s))
+      (prev || []).map((s) => ((s._id || s.id) === id ? { ...s, status: newStatus } : s))
     )
     showToast('Staff access status updated.')
   }
@@ -319,7 +546,7 @@ const Settings = () => {
         since: createdUser.createdAt ? new Date(createdUser.createdAt).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }) : 'Jan 2024'
       }
 
-      setStaff((prev) => [formattedMember, ...prev.filter(s => (s._id || s.id) !== formattedMember.id)])
+      setStaff((prev) => [formattedMember, ...(prev || []).filter(s => (s._id || s.id) !== formattedMember.id)])
       setStaffForm(EMPTY_STAFF_FORM)
       setIsStaffModalOpen(false)
       showToast('New staff member provisioned & saved to database successfully!')
@@ -338,7 +565,7 @@ const Settings = () => {
     } catch (err) {
       console.warn('Backend delete staff error:', err.message)
     }
-    setStaff((prev) => prev.filter((s) => (s._id || s.id) !== id))
+    setStaff((prev) => (prev || []).filter((s) => (s._id || s.id) !== id))
     showToast('Staff account revoked.')
   }
 
@@ -346,10 +573,10 @@ const Settings = () => {
     setMemberToEdit(member)
     const existingAvatar = member.avatar || member.img || null
     setStaffEditForm({
-      name: member.name,
+      name: member.name || '',
       phone: member.phone || member.email || '',
       password: member.password || '',
-      role: member.role,
+      role: member.role || 'Cashier',
       imageFile: null,
       previewUrl: existingAvatar,
       removeAvatar: false
@@ -385,7 +612,7 @@ const Settings = () => {
     }
 
     setStaff((prev) =>
-      prev.map((s) =>
+      (prev || []).map((s) =>
         (s._id || s.id) === id
           ? {
               ...s,
@@ -399,7 +626,7 @@ const Settings = () => {
       )
     )
 
-    // Check if the edited staff member is the currently logged-in active user profile
+    // Sync active user profile in localStorage if editing self
     const activeUserStr = localStorage.getItem('pos_active_user') || localStorage.getItem('userInfo')
     if (activeUserStr) {
       try {
@@ -493,14 +720,12 @@ const Settings = () => {
         }
       }
 
-      // Safely clear client storage
       localStorage.clear()
       sessionStorage.clear()
 
       setShowResetModal(false)
       setIsResetting(false)
 
-      // Immediate hard redirection to login prevents React component unmounting crashes
       window.location.href = '/login'
     } catch (err) {
       console.error('Factory Reset Error:', err)
@@ -517,7 +742,6 @@ const Settings = () => {
     }, 200)
   }
 
-  // Get initials for fallback avatar
   const getInitials = (name) => {
     if (!name) return 'S'
     const parts = name.trim().split(' ')
@@ -547,7 +771,7 @@ const Settings = () => {
         <button
           type="button"
           onClick={() => setActiveTab('store')}
-          className={`flex items-center gap-2 pb-3 text-xs font-bold transition duration-150 border-b-2 ${
+          className={`flex items-center gap-2 pb-3 text-xs font-bold transition duration-150 border-b-2 cursor-pointer ${
             activeTab === 'store'
               ? 'border-yellow-400 text-zinc-900'
               : 'border-transparent text-zinc-400 hover:text-zinc-700'
@@ -560,7 +784,7 @@ const Settings = () => {
         <button
           type="button"
           onClick={() => setActiveTab('billing')}
-          className={`flex items-center gap-2 pb-3 text-xs font-bold transition duration-150 border-b-2 ${
+          className={`flex items-center gap-2 pb-3 text-xs font-bold transition duration-150 border-b-2 cursor-pointer ${
             activeTab === 'billing'
               ? 'border-yellow-400 text-zinc-900'
               : 'border-transparent text-zinc-400 hover:text-zinc-700'
@@ -573,7 +797,7 @@ const Settings = () => {
         <button
           type="button"
           onClick={() => setActiveTab('users')}
-          className={`flex items-center gap-2 pb-3 text-xs font-bold transition duration-150 border-b-2 ${
+          className={`flex items-center gap-2 pb-3 text-xs font-bold transition duration-150 border-b-2 cursor-pointer ${
             activeTab === 'users'
               ? 'border-yellow-400 text-zinc-900'
               : 'border-transparent text-zinc-400 hover:text-zinc-700'
@@ -586,7 +810,7 @@ const Settings = () => {
         <button
           type="button"
           onClick={() => setActiveTab('data')}
-          className={`flex items-center gap-2 pb-3 text-xs font-bold transition duration-150 border-b-2 ${
+          className={`flex items-center gap-2 pb-3 text-xs font-bold transition duration-150 border-b-2 cursor-pointer ${
             activeTab === 'data'
               ? 'border-yellow-400 text-zinc-900'
               : 'border-transparent text-zinc-400 hover:text-zinc-700'
@@ -599,7 +823,7 @@ const Settings = () => {
         <button
           type="button"
           onClick={() => setActiveTab('hardware')}
-          className={`flex items-center gap-2 pb-3 text-xs font-bold transition duration-150 border-b-2 ${
+          className={`flex items-center gap-2 pb-3 text-xs font-bold transition duration-150 border-b-2 cursor-pointer ${
             activeTab === 'hardware'
               ? 'border-yellow-400 text-zinc-900'
               : 'border-transparent text-zinc-400 hover:text-zinc-700'
@@ -625,8 +849,8 @@ const Settings = () => {
                   type="text"
                   required
                   disabled={!isEditing}
-                  value={store.brandName}
-                  onChange={(e) => setStore((p) => ({ ...p, brandName: e.target.value }))}
+                  value={safeStore.brandName}
+                  onChange={(e) => setStore((p) => ({ ...safeStore, brandName: e.target.value }))}
                   className={`w-full rounded-xl border px-4 py-2 text-sm outline-none transition duration-150 ${isEditing ? 'border-zinc-200 bg-white text-zinc-900 focus:border-yellow-400 focus:ring-2 focus:ring-yellow-100 shadow-sm' : 'border-zinc-100 bg-zinc-50/70 text-zinc-500 cursor-not-allowed'}`}
                 />
               </div>
@@ -636,8 +860,8 @@ const Settings = () => {
                   type="text"
                   required
                   disabled={!isEditing}
-                  value={store.subtitle}
-                  onChange={(e) => setStore((p) => ({ ...p, subtitle: e.target.value }))}
+                  value={safeStore.subtitle}
+                  onChange={(e) => setStore((p) => ({ ...safeStore, subtitle: e.target.value }))}
                   className={`w-full rounded-xl border px-4 py-2 text-sm outline-none transition duration-150 ${isEditing ? 'border-zinc-200 bg-white text-zinc-900 focus:border-yellow-400 focus:ring-2 focus:ring-yellow-100 shadow-sm' : 'border-zinc-100 bg-zinc-50/70 text-zinc-500 cursor-not-allowed'}`}
                 />
               </div>
@@ -649,8 +873,8 @@ const Settings = () => {
                 type="text"
                 required
                 disabled={!isEditing}
-                value={store.storeName}
-                onChange={(e) => setStore((p) => ({ ...p, storeName: e.target.value }))}
+                value={safeStore.storeName}
+                onChange={(e) => setStore((p) => ({ ...safeStore, storeName: e.target.value }))}
                 className={`w-full rounded-xl border px-4 py-2 text-sm outline-none transition duration-150 ${isEditing ? 'border-zinc-200 bg-white text-zinc-900 focus:border-yellow-400 focus:ring-2 focus:ring-yellow-100 shadow-sm' : 'border-zinc-100 bg-zinc-50/70 text-zinc-500 cursor-not-allowed'}`}
               />
             </div>
@@ -662,8 +886,8 @@ const Settings = () => {
                   type="tel"
                   required
                   disabled={!isEditing}
-                  value={store.phone}
-                  onChange={(e) => setStore((p) => ({ ...p, phone: e.target.value }))}
+                  value={safeStore.phone}
+                  onChange={(e) => setStore((p) => ({ ...safeStore, phone: e.target.value }))}
                   className={`w-full rounded-xl border px-4 py-2 text-sm outline-none transition duration-150 ${isEditing ? 'border-zinc-200 bg-white text-zinc-900 focus:border-yellow-400 focus:ring-2 focus:ring-yellow-100 shadow-sm' : 'border-zinc-100 bg-zinc-50/70 text-zinc-500 cursor-not-allowed'}`}
                 />
               </div>
@@ -673,8 +897,8 @@ const Settings = () => {
                   type="email"
                   required
                   disabled={!isEditing}
-                  value={store.email}
-                  onChange={(e) => setStore((p) => ({ ...p, email: e.target.value }))}
+                  value={safeStore.email}
+                  onChange={(e) => setStore((p) => ({ ...safeStore, email: e.target.value }))}
                   className={`w-full rounded-xl border px-4 py-2 text-sm outline-none transition duration-150 ${isEditing ? 'border-zinc-200 bg-white text-zinc-900 focus:border-yellow-400 focus:ring-2 focus:ring-yellow-100 shadow-sm' : 'border-zinc-100 bg-zinc-50/70 text-zinc-500 cursor-not-allowed'}`}
                 />
               </div>
@@ -685,8 +909,8 @@ const Settings = () => {
               <textarea
                 required
                 disabled={!isEditing}
-                value={store.address}
-                onChange={(e) => setStore((p) => ({ ...p, address: e.target.value }))}
+                value={safeStore.address}
+                onChange={(e) => setStore((p) => ({ ...safeStore, address: e.target.value }))}
                 className={`w-full h-20 rounded-xl border px-4 py-2.5 text-sm outline-none transition resize-none duration-150 ${isEditing ? 'border-zinc-200 bg-white text-zinc-900 focus:border-yellow-400 focus:ring-2 focus:ring-yellow-100 shadow-sm' : 'border-zinc-100 bg-zinc-50/70 text-zinc-500 cursor-not-allowed'}`}
               />
             </div>
@@ -696,7 +920,7 @@ const Settings = () => {
                 <button
                   type="button"
                   onClick={() => setIsEditing(true)}
-                  className="rounded-xl bg-yellow-400 px-6 py-2.5 text-xs font-bold text-zinc-900 shadow-md hover:bg-yellow-500 transition active:scale-95 duration-150"
+                  className="rounded-xl bg-yellow-400 px-6 py-2.5 text-xs font-bold text-zinc-900 shadow-md hover:bg-yellow-500 transition active:scale-95 duration-150 cursor-pointer"
                 >
                   Edit Store Profile
                 </button>
@@ -705,13 +929,13 @@ const Settings = () => {
                   <button
                     type="button"
                     onClick={cancelStoreSettings}
-                    className="rounded-xl border border-zinc-200 bg-white px-6 py-2.5 text-xs font-bold text-zinc-600 shadow-sm hover:bg-zinc-50 transition active:scale-95 duration-150"
+                    className="rounded-xl border border-zinc-200 bg-white px-6 py-2.5 text-xs font-bold text-zinc-600 shadow-sm hover:bg-zinc-50 transition active:scale-95 duration-150 cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="rounded-xl bg-yellow-400 px-6 py-2.5 text-xs font-bold text-zinc-900 shadow-md hover:bg-yellow-500 transition active:scale-95 duration-150"
+                    className="rounded-xl bg-yellow-400 px-6 py-2.5 text-xs font-bold text-zinc-900 shadow-md hover:bg-yellow-500 transition active:scale-95 duration-150 cursor-pointer"
                   >
                     Save Changes
                   </button>
@@ -726,7 +950,6 @@ const Settings = () => {
           <form onSubmit={saveBillingSettings} className="max-w-2xl rounded-2xl border border-zinc-200 bg-white p-5 md:p-6 shadow-sm space-y-5">
             <h2 className="text-base font-extrabold text-zinc-900 border-b border-zinc-100 pb-2">Taxation &amp; Receipt Configuration</h2>
 
-            {/* GSTIN & Header Subtitle Fields */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className="mb-1 block text-xs font-semibold text-zinc-600">GSTIN Number</label>
@@ -734,8 +957,8 @@ const Settings = () => {
                   type="text"
                   required
                   placeholder="e.g. 21ABCDE1234F1Z5"
-                  value={billing.gstin || ''}
-                  onChange={(e) => setBilling((p) => ({ ...p, gstin: e.target.value }))}
+                  value={safeBilling.gstin || ''}
+                  onChange={(e) => setBilling((p) => ({ ...safeBilling, gstin: e.target.value }))}
                   className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm text-zinc-900 outline-none transition focus:border-yellow-400 focus:ring-2 focus:ring-yellow-100 font-mono uppercase"
                 />
               </div>
@@ -746,8 +969,8 @@ const Settings = () => {
                   type="text"
                   required
                   placeholder="e.g. Main Road, Cafe Square, Odisha • Ph: 9000000000"
-                  value={billing.invoiceHeader || ''}
-                  onChange={(e) => setBilling((p) => ({ ...p, invoiceHeader: e.target.value }))}
+                  value={safeBilling.invoiceHeader || ''}
+                  onChange={(e) => setBilling((p) => ({ ...safeBilling, invoiceHeader: e.target.value }))}
                   className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm text-zinc-900 outline-none transition focus:border-yellow-400 focus:ring-2 focus:ring-yellow-100"
                 />
               </div>
@@ -760,16 +983,16 @@ const Settings = () => {
                   type="number"
                   step="0.01"
                   required
-                  value={billing.taxRate}
-                  onChange={(e) => setBilling((p) => ({ ...p, taxRate: e.target.value }))}
+                  value={safeBilling.taxRate}
+                  onChange={(e) => setBilling((p) => ({ ...safeBilling, taxRate: e.target.value }))}
                   className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm text-zinc-900 outline-none transition focus:border-yellow-400 focus:ring-2 focus:ring-yellow-100"
                 />
               </div>
               <div>
                 <label className="mb-1 block text-xs font-semibold text-zinc-600">Tax Type</label>
                 <select
-                  value={billing.taxType || 'exclusive'}
-                  onChange={(e) => setBilling((p) => ({ ...p, taxType: e.target.value }))}
+                  value={safeBilling.taxType || 'exclusive'}
+                  onChange={(e) => setBilling((p) => ({ ...safeBilling, taxType: e.target.value }))}
                   className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm text-zinc-900 outline-none transition focus:border-yellow-400 focus:ring-2 focus:ring-yellow-100"
                 >
                   <option value="exclusive">Exclusive (Add to price)</option>
@@ -779,8 +1002,8 @@ const Settings = () => {
               <div>
                 <label className="mb-1 block text-xs font-semibold text-zinc-600">Currency Code</label>
                 <select
-                  value={billing.currency}
-                  onChange={(e) => setBilling((p) => ({ ...p, currency: e.target.value }))}
+                  value={safeBilling.currency}
+                  onChange={(e) => setBilling((p) => ({ ...safeBilling, currency: e.target.value }))}
                   className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm text-zinc-900 outline-none transition focus:border-yellow-400 focus:ring-2 focus:ring-yellow-100"
                 >
                   <option value="₹ INR">₹ INR (Indian Rupee)</option>
@@ -796,8 +1019,8 @@ const Settings = () => {
               <textarea
                 required
                 placeholder="e.g. THANK YOU FOR VISITING MAGIXX! HAVE A SWEET DAY • VISIT AGAIN"
-                value={billing.invoiceFooter || billing.footerNotes || ''}
-                onChange={(e) => setBilling((p) => ({ ...p, invoiceFooter: e.target.value, footerNotes: e.target.value }))}
+                value={safeBilling.invoiceFooter || safeBilling.footerNotes || ''}
+                onChange={(e) => setBilling((p) => ({ ...safeBilling, invoiceFooter: e.target.value, footerNotes: e.target.value }))}
                 className="w-full h-20 rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-sm text-zinc-900 outline-none transition focus:border-yellow-400 focus:ring-2 focus:ring-yellow-100 resize-none"
               />
             </div>
@@ -813,16 +1036,14 @@ const Settings = () => {
           </form>
         )}
 
-        {/* TAB 3: Staff & Roles (Unified Production Card Directory) */}
+        {/* TAB 3: Staff & Roles */}
         {activeTab === 'users' && (
           <div className="space-y-5">
-            
-            {/* Header & Provision Action */}
             <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-zinc-200 bg-white p-5 shadow-xs">
               <div>
                 <h2 className="text-base font-extrabold text-zinc-900">Staff Accounts &amp; Access Directory</h2>
                 <p className="text-xs text-zinc-400 font-medium">
-                  {staff.length} staff members • {staff.filter(s => s.status === 'active').length} active access accounts
+                  {safeStaff.length} staff members • {safeStaff.filter(s => s.status === 'active').length} active access accounts
                 </p>
               </div>
               <button
@@ -831,39 +1052,37 @@ const Settings = () => {
                   setStaffForm(EMPTY_STAFF_FORM)
                   setIsStaffModalOpen(true)
                 }}
-                className="inline-flex items-center gap-2 rounded-xl bg-yellow-400 px-5 py-2.5 text-xs font-extrabold text-zinc-900 shadow-md transition-all hover:bg-yellow-500 active:scale-95"
+                className="inline-flex items-center gap-2 rounded-xl bg-yellow-400 px-5 py-2.5 text-xs font-extrabold text-zinc-900 shadow-md transition-all hover:bg-yellow-500 active:scale-95 cursor-pointer"
               >
                 <Icon d={IC.plus} size={15} />
                 <span>Provision Staff Member</span>
               </button>
             </div>
 
-            {/* Staff Card Grid */}
-            {staff.length === 0 ? (
+            {safeStaff.length === 0 ? (
               <div className="flex flex-col items-center justify-center p-14 text-center bg-white border border-zinc-200/80 rounded-2xl w-full">
                 <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-50 text-amber-600 border border-amber-200">
                   <Icon d={IC.users} size={24} />
                 </div>
                 <p className="text-sm font-extrabold text-zinc-800">No staff members provisioned</p>
                 <p className="text-xs text-zinc-400 mt-1 max-w-sm">
-                  Your directory is currently clean for production. Click "Provision Staff Member" above to create an authorized account.
+                  Click "Provision Staff Member" above to create an authorized account.
                 </p>
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
-                {staff.map((member) => {
+                {safeStaff.map((member) => {
                   const memberId = member._id || member.id
                   return (
                     <div
                       key={memberId}
                       className="flex flex-col items-center gap-3 rounded-2xl border border-zinc-200 bg-white p-5 shadow-xs transition-all hover:shadow-md hover:scale-[1.01]"
                     >
-                      {/* Avatar + Online Indicator */}
                       <div className="relative">
-                        {member.img ? (
+                        {member.img || member.avatar ? (
                           <img
-                            src={member.img}
-                            alt={member.name}
+                            src={member.img || member.avatar}
+                            alt={member.name || 'Staff'}
                             className="h-16 w-16 rounded-full object-cover shadow-sm ring-2 ring-yellow-400"
                           />
                         ) : (
@@ -878,22 +1097,19 @@ const Settings = () => {
                         />
                       </div>
 
-                      {/* Name & Phone */}
                       <div className="text-center w-full">
-                        <p className="font-extrabold text-zinc-900 text-sm truncate">{member.name}</p>
+                        <p className="font-extrabold text-zinc-900 text-sm truncate">{member.name || 'Unnamed'}</p>
                         <p className="text-[11px] text-zinc-500 font-medium truncate mt-0.5">📱 {member.phone || member.email || 'N/A'}</p>
                       </div>
 
-                      {/* Role Badge */}
                       <span className={`px-3 py-0.5 rounded-full text-[10px] uppercase tracking-wider ${ROLE_STYLES[member.role] ?? 'bg-zinc-50 text-zinc-600 border border-zinc-200'}`}>
-                        {member.role}
+                        {member.role || 'Cashier'}
                       </span>
 
-                      {/* Status Toggle */}
                       <button
                         type="button"
                         onClick={() => toggleStaffStatus(memberId)}
-                        className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-bold transition-all active:scale-95 ${
+                        className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-bold transition-all active:scale-95 cursor-pointer ${
                           member.status === 'active'
                             ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/80 hover:bg-emerald-100'
                             : 'bg-zinc-100 text-zinc-500 border border-zinc-200 hover:bg-zinc-200'
@@ -903,7 +1119,6 @@ const Settings = () => {
                         {member.status === 'active' ? 'Active Access' : 'Access Suspended'}
                       </button>
 
-                      {/* Actions */}
                       <div className="flex w-full gap-2 pt-2 border-t border-zinc-100 mt-1">
                         <button
                           type="button"
@@ -925,7 +1140,6 @@ const Settings = () => {
                 })}
               </div>
             )}
-
           </div>
         )}
 
@@ -949,7 +1163,7 @@ const Settings = () => {
                 <button
                   type="button"
                   onClick={handleBackup}
-                  className="w-full flex items-center justify-center gap-1.5 rounded-xl bg-zinc-900 px-4 py-2.5 text-xs font-bold text-white shadow hover:bg-zinc-800 active:scale-95 transition"
+                  className="w-full flex items-center justify-center gap-1.5 rounded-xl bg-zinc-900 px-4 py-2.5 text-xs font-bold text-white shadow hover:bg-zinc-800 active:scale-95 transition cursor-pointer"
                 >
                   Download DB (.json)
                 </button>
@@ -986,7 +1200,7 @@ const Settings = () => {
               <button
                 type="button"
                 onClick={handleLogout}
-                className="rounded-xl border border-red-200 bg-red-50 hover:bg-red-100 px-4 py-2 text-xs font-bold text-red-600 shadow-2xs transition active:scale-95 shrink-0"
+                className="rounded-xl border border-red-200 bg-red-50 hover:bg-red-100 px-4 py-2 text-xs font-bold text-red-600 shadow-2xs transition active:scale-95 shrink-0 cursor-pointer"
               >
                 Logout Session
               </button>
@@ -1008,7 +1222,6 @@ const Settings = () => {
                 </button>
               </div>
             </div>
-
           </div>
         )}
 
@@ -1018,10 +1231,10 @@ const Settings = () => {
             <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm space-y-5">
               <div className="border-b border-zinc-100 pb-3">
                 <h2 className="text-base font-extrabold text-zinc-900">Hardware &amp; Printers</h2>
-                <p className="mt-0.5 text-xs text-zinc-500">Configure Bluetooth thermal printers for KOT (kitchen) and billing (counter) receipts. Requires Chrome or Edge browser with Bluetooth enabled.</p>
+                <p className="mt-0.5 text-xs text-zinc-500">Configure Bluetooth thermal printers for KOT (kitchen) and billing (counter) receipts.</p>
               </div>
 
-              {/* Printer mode & status indicator */}
+              {/* Status Banner */}
               <div className={`flex items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-xs font-bold ${
                 window.electronAPI && typeof window.electronAPI.printReceipt === 'function'
                   ? 'border-green-200 bg-green-50 text-green-800'
@@ -1051,22 +1264,26 @@ const Settings = () => {
                       <p className="text-[10px] text-zinc-500">Receives KOT slip when &quot;KOT &amp; Print&quot; is clicked in POS</p>
                     </div>
                   </div>
-                  {Boolean(printers.kotPrinterName || printers.kotPrinterAddress) && (
+                  {(kotPairStatus === 'paired' || Boolean(safePrinters.kotPrinterName || safePrinters.kotPrinterAddress)) && (
                     <span className="flex items-center gap-1 rounded-full bg-green-100 border border-green-200 px-2.5 py-1 text-[10px] font-extrabold text-green-700">
                       <span className="h-1.5 w-1.5 rounded-full bg-green-500" />Configured
                     </span>
                   )}
+                  {kotPairStatus === 'scanning' && (
+                    <span className="rounded-full bg-blue-100 border border-blue-200 px-2.5 py-1 text-[10px] font-extrabold text-blue-700 animate-pulse">Scanning…</span>
+                  )}
                 </div>
 
-                {systemPrinters.length > 0 && (
+                {safeSystemPrinters.length > 0 && (
                   <div>
                     <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-500">Select System / Bluetooth Printer (OS Paired)</label>
                     <select
-                      value={printers.kotPrinterName}
+                      value={safePrinters.kotPrinterName}
                       onChange={(e) => {
                         const selectedName = e.target.value;
                         setPrinters((p) => {
-                          const updated = { ...p, kotPrinterName: selectedName };
+                          const safePrev = p || DEFAULT_PRINTERS;
+                          const updated = { ...safePrev, kotPrinterName: selectedName };
                           localStorage.setItem('pos_printer_settings', JSON.stringify(updated));
                           window.dispatchEvent(new Event('storage'));
                           return updated;
@@ -1075,7 +1292,7 @@ const Settings = () => {
                       className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 outline-none focus:border-yellow-400"
                     >
                       <option value="">-- Choose System Printer --</option>
-                      {systemPrinters.map((p, idx) => (
+                      {safeSystemPrinters.map((p, idx) => (
                         <option key={idx} value={p.name}>
                           {p.name} {p.isDefault ? '(OS Default)' : ''}
                         </option>
@@ -1089,8 +1306,8 @@ const Settings = () => {
                     <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-500">Device / Printer Name</label>
                     <input
                       type="text"
-                      value={printers.kotPrinterName}
-                      onChange={(e) => setPrinters((p) => ({ ...p, kotPrinterName: e.target.value }))}
+                      value={safePrinters.kotPrinterName}
+                      onChange={(e) => setPrinters((p) => ({ ...(p || DEFAULT_PRINTERS), kotPrinterName: e.target.value }))}
                       placeholder="e.g. POS-58 or PT-210 Kitchen"
                       className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 outline-none focus:border-yellow-400"
                     />
@@ -1099,8 +1316,8 @@ const Settings = () => {
                     <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-500">GATT Service UUID (Web BT)</label>
                     <input
                       type="text"
-                      value={printers.kotPrinterServiceUUID}
-                      onChange={(e) => setPrinters((p) => ({ ...p, kotPrinterServiceUUID: e.target.value }))}
+                      value={safePrinters.kotPrinterServiceUUID}
+                      onChange={(e) => setPrinters((p) => ({ ...(p || DEFAULT_PRINTERS), kotPrinterServiceUUID: e.target.value }))}
                       placeholder="000018f0-0000-1000-8000-00805f9b34fb"
                       className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-mono text-zinc-700 outline-none focus:border-yellow-400"
                     />
@@ -1108,6 +1325,17 @@ const Settings = () => {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 pt-1">
+                  {navigator.bluetooth && (
+                    <button
+                      type="button"
+                      onClick={() => scanAndPairPrinter('kot')}
+                      disabled={kotPairStatus === 'scanning'}
+                      className="flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-2 text-xs font-extrabold text-white hover:bg-zinc-700 transition disabled:opacity-50 cursor-pointer"
+                    >
+                      <Icon d={IC.bluetooth} size={13} />
+                      {kotPairStatus === 'scanning' ? 'Scanning…' : 'Scan & Pair Web BT'}
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => handleTestPrint('kot')}
@@ -1116,17 +1344,19 @@ const Settings = () => {
                     <Icon d={IC.printer} size={13} />
                     Test Print Receipt
                   </button>
-                  {(printers.kotPrinterName || printers.kotPrinterAddress) && (
+                  {(safePrinters.kotPrinterName || safePrinters.kotPrinterAddress) && (
                     <button
                       type="button"
                       onClick={() => {
                         setPrinters((p) => {
-                          const updated = { ...p, kotPrinterName: '', kotPrinterAddress: '' };
+                          const safePrev = p || DEFAULT_PRINTERS;
+                          const updated = { ...safePrev, kotPrinterName: '', kotPrinterAddress: '' };
                           localStorage.setItem('pos_printer_settings', JSON.stringify(updated));
                           window.dispatchEvent(new Event('storage'));
                           api.put('/settings', updated).catch(() => {});
                           return updated;
                         });
+                        setKotPairStatus('');
                       }}
                       className="flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-100 transition cursor-pointer"
                     >
@@ -1149,22 +1379,26 @@ const Settings = () => {
                       <p className="text-[10px] text-zinc-500">Receives final receipt when &quot;Checkout &amp; Pay&quot; completes in POS</p>
                     </div>
                   </div>
-                  {Boolean(printers.billingPrinterName || printers.billingPrinterAddress) && (
+                  {(billPairStatus === 'paired' || Boolean(safePrinters.billingPrinterName || safePrinters.billingPrinterAddress)) && (
                     <span className="flex items-center gap-1 rounded-full bg-green-100 border border-green-200 px-2.5 py-1 text-[10px] font-extrabold text-green-700">
                       <span className="h-1.5 w-1.5 rounded-full bg-green-500" />Configured
                     </span>
                   )}
+                  {billPairStatus === 'scanning' && (
+                    <span className="rounded-full bg-blue-100 border border-blue-200 px-2.5 py-1 text-[10px] font-extrabold text-blue-700 animate-pulse">Scanning…</span>
+                  )}
                 </div>
 
-                {systemPrinters.length > 0 && (
+                {safeSystemPrinters.length > 0 && (
                   <div>
                     <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-500">Select System / Bluetooth Printer (OS Paired)</label>
                     <select
-                      value={printers.billingPrinterName}
+                      value={safePrinters.billingPrinterName}
                       onChange={(e) => {
                         const selectedName = e.target.value;
                         setPrinters((p) => {
-                          const updated = { ...p, billingPrinterName: selectedName };
+                          const safePrev = p || DEFAULT_PRINTERS;
+                          const updated = { ...safePrev, billingPrinterName: selectedName };
                           localStorage.setItem('pos_printer_settings', JSON.stringify(updated));
                           window.dispatchEvent(new Event('storage'));
                           return updated;
@@ -1173,7 +1407,7 @@ const Settings = () => {
                       className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 outline-none focus:border-yellow-400"
                     >
                       <option value="">-- Choose System Printer --</option>
-                      {systemPrinters.map((p, idx) => (
+                      {safeSystemPrinters.map((p, idx) => (
                         <option key={idx} value={p.name}>
                           {p.name} {p.isDefault ? '(OS Default)' : ''}
                         </option>
@@ -1187,8 +1421,8 @@ const Settings = () => {
                     <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-500">Device / Printer Name</label>
                     <input
                       type="text"
-                      value={printers.billingPrinterName}
-                      onChange={(e) => setPrinters((p) => ({ ...p, billingPrinterName: e.target.value }))}
+                      value={safePrinters.billingPrinterName}
+                      onChange={(e) => setPrinters((p) => ({ ...(p || DEFAULT_PRINTERS), billingPrinterName: e.target.value }))}
                       placeholder="e.g. POS-58 or PT-210 Counter"
                       className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 outline-none focus:border-yellow-400"
                     />
@@ -1197,8 +1431,8 @@ const Settings = () => {
                     <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-500">GATT Service UUID (Web BT)</label>
                     <input
                       type="text"
-                      value={printers.billingPrinterServiceUUID}
-                      onChange={(e) => setPrinters((p) => ({ ...p, billingPrinterServiceUUID: e.target.value }))}
+                      value={safePrinters.billingPrinterServiceUUID}
+                      onChange={(e) => setPrinters((p) => ({ ...(p || DEFAULT_PRINTERS), billingPrinterServiceUUID: e.target.value }))}
                       placeholder="000018f0-0000-1000-8000-00805f9b34fb"
                       className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-mono text-zinc-700 outline-none focus:border-yellow-400"
                     />
@@ -1206,6 +1440,17 @@ const Settings = () => {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 pt-1">
+                  {navigator.bluetooth && (
+                    <button
+                      type="button"
+                      onClick={() => scanAndPairPrinter('billing')}
+                      disabled={billPairStatus === 'scanning'}
+                      className="flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-2 text-xs font-extrabold text-white hover:bg-zinc-700 transition disabled:opacity-50 cursor-pointer"
+                    >
+                      <Icon d={IC.bluetooth} size={13} />
+                      {billPairStatus === 'scanning' ? 'Scanning…' : 'Scan & Pair Web BT'}
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => handleTestPrint('billing')}
@@ -1215,17 +1460,19 @@ const Settings = () => {
                     Test Print Receipt
                   </button>
 
-                  {(printers.billingPrinterName || printers.billingPrinterAddress) && (
+                  {(safePrinters.billingPrinterName || safePrinters.billingPrinterAddress) && (
                     <button
                       type="button"
                       onClick={() => {
                         setPrinters((p) => {
-                          const updated = { ...p, billingPrinterName: '', billingPrinterAddress: '' };
+                          const safePrev = p || DEFAULT_PRINTERS;
+                          const updated = { ...safePrev, billingPrinterName: '', billingPrinterAddress: '' };
                           localStorage.setItem('pos_printer_settings', JSON.stringify(updated));
                           window.dispatchEvent(new Event('storage'));
                           api.put('/settings', updated).catch(() => {});
                           return updated;
                         });
+                        setBillPairStatus('');
                       }}
                       className="flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-100 transition cursor-pointer"
                     >
@@ -1234,22 +1481,6 @@ const Settings = () => {
                     </button>
                   )}
                 </div>
-              </div>
-
-
-              {/* Common UUID hints */}
-              <div className="rounded-xl border border-zinc-100 bg-zinc-50 p-3.5 space-y-1.5">
-                <p className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-500">Common Bluetooth Printer Service UUIDs</p>
-                {[
-                  { label: 'Generic Serial (most EZO/GP58)', uuid: '000018f0-0000-1000-8000-00805f9b34fb' },
-                  { label: 'Nordic UART Service (NUS)', uuid: '6e400001-b5a3-f393-e0a9-e50e24dcca9e' },
-                  { label: 'Generic FFF0 (Xprinter, Rongta)', uuid: '0000fff0-0000-1000-8000-00805f9b34fb' },
-                ].map(({ label, uuid }) => (
-                  <div key={uuid} className="flex items-center justify-between gap-2">
-                    <span className="text-[10px] text-zinc-600 font-medium">{label}</span>
-                    <code className="text-[9px] font-mono text-zinc-500 bg-zinc-100 px-1.5 py-0.5 rounded">{uuid}</code>
-                  </div>
-                ))}
               </div>
 
               {/* Save Button */}
@@ -1291,7 +1522,6 @@ const Settings = () => {
               </button>
             </div>
 
-            {/* Profile Photo Upload */}
             <div className="mb-4 flex items-center gap-4 border-b border-zinc-100 pb-4">
               <div
                 onClick={() => fileInputRef.current?.click()}
@@ -1391,7 +1621,7 @@ const Settings = () => {
               <button
                 type="button"
                 onClick={() => setIsStaffModalOpen(false)}
-                className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-xs font-bold text-zinc-600 hover:bg-zinc-100 transition"
+                className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-xs font-bold text-zinc-600 hover:bg-zinc-100 transition cursor-pointer"
               >
                 Cancel
               </button>
@@ -1399,7 +1629,7 @@ const Settings = () => {
                 type="button"
                 onClick={handleSaveStaff}
                 disabled={!staffForm.name.trim() || !staffForm.phone.trim() || !staffForm.password}
-                className="flex-1 rounded-xl bg-yellow-400 py-2.5 text-xs font-extrabold text-zinc-900 shadow-md hover:bg-yellow-500 transition disabled:opacity-50"
+                className="flex-1 rounded-xl bg-yellow-400 py-2.5 text-xs font-extrabold text-zinc-900 shadow-md hover:bg-yellow-500 transition disabled:opacity-50 cursor-pointer"
               >
                 Provision Account
               </button>
@@ -1430,7 +1660,6 @@ const Settings = () => {
               </button>
             </div>
 
-            {/* Profile Photo Upload inside Edit Modal */}
             <div className="mb-4 flex items-center gap-4 border-b border-zinc-100 pb-4">
               <div
                 onClick={() => editFileInputRef.current?.click()}
@@ -1534,7 +1763,7 @@ const Settings = () => {
               <button
                 type="button"
                 onClick={() => setIsStaffEditModalOpen(false)}
-                className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-xs font-bold text-zinc-600 hover:bg-zinc-100 transition"
+                className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-xs font-bold text-zinc-600 hover:bg-zinc-100 transition cursor-pointer"
               >
                 Cancel
               </button>
@@ -1542,7 +1771,7 @@ const Settings = () => {
                 type="button"
                 onClick={handleEditStaffSave}
                 disabled={!staffEditForm.name.trim() || !staffEditForm.phone.trim()}
-                className="flex-1 rounded-xl bg-yellow-400 py-2.5 text-xs font-extrabold text-zinc-900 shadow-md hover:bg-yellow-500 transition disabled:opacity-50"
+                className="flex-1 rounded-xl bg-yellow-400 py-2.5 text-xs font-extrabold text-zinc-900 shadow-md hover:bg-yellow-500 transition disabled:opacity-50 cursor-pointer"
               >
                 Save Changes
               </button>
@@ -1610,12 +1839,12 @@ const Settings = () => {
             </div>
 
             <div className="my-4 max-h-64 overflow-y-auto space-y-2 pr-1">
-              {availableDevices.length === 0 ? (
+              {safeAvailableDevices.length === 0 ? (
                 <div className="py-8 text-center text-xs text-zinc-500 font-medium leading-relaxed">
                   Scanning for Bluetooth peripherals... Make sure your thermal printer is turned on and discoverable.
                 </div>
               ) : (
-                availableDevices.map((dev, idx) => (
+                safeAvailableDevices.map((dev, idx) => (
                   <div
                     key={dev.deviceId || idx}
                     className="flex items-center justify-between rounded-xl border border-zinc-200 p-3 hover:border-yellow-400 hover:bg-yellow-50/40 transition shadow-2xs"

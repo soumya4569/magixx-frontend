@@ -1085,10 +1085,11 @@ const Order = () => {
       billingSettings.invoiceFooter || '',
     ].filter(Boolean).join('\n')
 
-    // Final customer bill Bluetooth print is bypassed/disabled until a second printer is added
-    // Process payment and commit transaction directly to backend DB
+    // Silently print customer bill receipt to Billing printer via Electron Native IPC
+    await sendToBluetoothPrinter('billing', billReceiptText, toast)
 
     try {
+
       let customerId = null
       if (!isAggregatorOrder && phone && phone.length >= 10) {
         try {

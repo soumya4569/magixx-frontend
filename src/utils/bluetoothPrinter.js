@@ -1,18 +1,10 @@
 /**
  * bluetoothPrinter.js
- * Dedicated Web Bluetooth helper utility for direct thermal printer management.
- * Handles device discovery via Web Bluetooth (navigator.bluetooth.requestDevice),
- * targeted connection by device name/address, active stream health verification,
- * seamless re-connection, ESC/POS byte streaming, and backend device status logging.
+ * Native Electron Printer helper utility.
+ * Replaces Web Bluetooth with silent native printing via Electron IPC (window.electronAPI.printReceipt).
  */
 
 import api from '../services/api';
-
-// Internal memory stream cache for active GATT connections
-const streamCache = {
-  kot: { device: null, server: null, service: null, characteristic: null, lastUsed: null },
-  billing: { device: null, server: null, service: null, characteristic: null, lastUsed: null },
-};
 
 /**
  * Report printer device status and diagnostic logs to backend API.
@@ -28,7 +20,7 @@ export const logPrinterDeviceEvent = async (printerType, deviceName, deviceAddre
       details,
     });
   } catch (err) {
-    console.warn('[BluetoothPrinter] Failed to post printer log to backend:', err.message);
+    console.warn('[PrinterService] Failed to post printer log to backend:', err.message);
   }
 };
 
@@ -57,352 +49,87 @@ export const getPrinterConfig = (printerType = 'kot') => {
       }
     }
   } catch (err) {
-    console.warn('[BluetoothPrinter] Failed to read printer config from localStorage:', err);
+    console.warn('[PrinterService] Failed to read printer config from localStorage:', err);
   }
 
   return config;
 };
 
 /**
- * Check if active Bluetooth GATT server stream is connected and operational.
+ * Check if printer is configured.
  */
 export const checkPrinterStreamStatus = (printerType) => {
-  const cache = streamCache[printerType];
-  const isConnected = Boolean(
-    cache &&
-    cache.device &&
-    cache.server &&
-    cache.server.connected &&
-    cache.characteristic
-  );
+  const config = getPrinterConfig(printerType);
+  const isConfigured = Boolean(config.name);
 
   return {
-    isConnected,
-    deviceName: cache?.device?.name || '',
-    deviceAddress: cache?.device?.id || '',
-    lastUsed: cache?.lastUsed || null,
+    isConnected: isConfigured,
+    deviceName: config.name || '',
+    deviceAddress: config.address || '',
+    lastUsed: new Date(),
   };
 };
 
 /**
- * Attach disconnect listener to a Bluetooth device to reactively track stream loss.
- */
-const attachDisconnectListener = (device, printerType) => {
-  if (!device) return;
-
-  const handleDisconnect = () => {
-    console.warn(`[BluetoothPrinter] Active GATT server stream lost for ${printerType} printer ("${device.name || device.id}").`);
-    streamCache[printerType] = { device: null, server: null, service: null, characteristic: null, lastUsed: null };
-    logPrinterDeviceEvent(
-      printerType,
-      device.name || '',
-      device.id || '',
-      'DISCONNECTED',
-      'Device stream lost or disconnected by hardware/range'
-    );
-  };
-
-  device.removeEventListener('gattserverdisconnected', handleDisconnect);
-  device.addEventListener('gattserverdisconnected', handleDisconnect);
-};
-
-/**
- * Resolve GATT service and writable characteristic from a connected server.
- * Scans all primary services dynamically to locate writable ESC/POS characteristics.
- */
-const resolveServiceAndCharacteristic = async (server, primaryUUID) => {
-  try {
-    let services = [];
-    try {
-      services = await server.getPrimaryServices();
-    } catch {
-      if (primaryUUID) {
-        try {
-          const s = await server.getPrimaryService(primaryUUID);
-          services = [s];
-        } catch { /* continue */ }
-      }
-    }
-
-    const fallbackUUIDs = [
-      '6e400001-b5a3-f393-e0a9-e50e24dcca9e',
-      '000018f0-0000-1000-8000-00805f9b34fb',
-      '0000fff0-0000-1000-8000-00805f9b34fb',
-      '00001101-0000-1000-8000-00805f9b34fb',
-    ];
-
-    for (const uuid of fallbackUUIDs) {
-      if (!services.some((s) => s.uuid === uuid)) {
-        try {
-          const s = await server.getPrimaryService(uuid);
-          if (s) services.push(s);
-        } catch { /* continue */ }
-      }
-    }
-
-    for (const service of services) {
-      try {
-        const characteristics = await service.getCharacteristics();
-        const writeChar = characteristics.find(
-          (c) => c.properties.write || c.properties.writeWithoutResponse
-        );
-        if (writeChar) {
-          return { service, characteristic: writeChar };
-        }
-      } catch { /* continue */ }
-    }
-  } catch (e) {
-    console.warn('[BluetoothPrinter] Service/characteristic resolution failed:', e);
-  }
-
-  return { service: null, characteristic: null };
-};
-
-/**
- * Attempt seamless re-connection using cached device reference or navigator.bluetooth.getDevices().
- */
-export const attemptSeamlessReconnect = async (printerType) => {
-  const { name, address, serviceUUID } = getPrinterConfig(printerType);
-  let targetDevice = streamCache[printerType]?.device || null;
-
-  try {
-    if (!targetDevice && navigator.bluetooth && typeof navigator.bluetooth.getDevices === 'function') {
-      const allowedDevices = await navigator.bluetooth.getDevices();
-      if (allowedDevices && allowedDevices.length > 0) {
-        targetDevice = allowedDevices.find(
-          (d) =>
-            (address && d.id === address) ||
-            (name && d.name && d.name.toLowerCase() === name.toLowerCase())
-        );
-      }
-    }
-
-    if (!targetDevice) return null;
-
-    console.log(`[BluetoothPrinter] Attempting seamless Web Bluetooth reconnect to "${targetDevice.name || targetDevice.id}"...`);
-    let server = null;
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      try {
-        server = await targetDevice.gatt.connect();
-        if (server && server.connected) break;
-      } catch (err) {
-        if (attempt === 2) throw err;
-        await new Promise((r) => setTimeout(r, 300));
-      }
-    }
-
-    if (!server || !server.connected) return null;
-
-    const { service, characteristic } = await resolveServiceAndCharacteristic(server, serviceUUID);
-    if (!service || !characteristic) {
-      if (server.connected) server.disconnect();
-      return null;
-    }
-
-    attachDisconnectListener(targetDevice, printerType);
-    const activeStream = {
-      device: targetDevice,
-      server,
-      service,
-      characteristic,
-      lastUsed: new Date(),
-    };
-    streamCache[printerType] = activeStream;
-
-    logPrinterDeviceEvent(
-      printerType,
-      targetDevice.name || name,
-      targetDevice.id || address,
-      'RECONNECTED',
-      'Seamless Web Bluetooth re-connection succeeded without browser prompt'
-    );
-
-    return activeStream;
-  } catch (err) {
-    console.warn(`[BluetoothPrinter] Seamless Bluetooth reconnect failed for ${printerType}:`, err.message);
-    return null;
-  }
-};
-
-/**
- * Ensure Bluetooth printer stream is connected:
- * 1. Uses existing active GATT stream if healthy.
- * 2. Attempts seamless re-connection if disconnected.
- * 3. Fallback: Gracefully prompts browser device pairing dialog via navigator.bluetooth.requestDevice.
- */
-export const ensurePrinterConnected = async (printerType, toast = console.log) => {
-  const label = printerType === 'kot' ? 'Kitchen KOT' : 'Counter Billing';
-
-  if (!navigator.bluetooth) {
-    toast(`No Web Bluetooth API support in this browser. Use Chrome or Edge on desktop/Android to pair ${label} printer.`, 'warning');
-    return null;
-  }
-
-  const { name, address, serviceUUID } = getPrinterConfig(printerType);
-  if (!name && !address) {
-    toast(`No ${label} printer configured. Go to Settings → Hardware & Printers to pair a Bluetooth printer.`, 'warning');
-    return null;
-  }
-
-  // 1. Check existing active stream health
-  const currentCache = streamCache[printerType];
-  if (
-    currentCache &&
-    currentCache.device &&
-    currentCache.server &&
-    currentCache.server.connected &&
-    currentCache.characteristic
-  ) {
-    currentCache.lastUsed = new Date();
-    return currentCache;
-  }
-
-  // 2. Stream is lost/disconnected — attempt seamless re-connection
-  const reconnectedStream = await attemptSeamlessReconnect(printerType);
-  if (reconnectedStream) {
-    toast(`Seamlessly reconnected to ${label} printer ("${reconnectedStream.device.name || name}").`, 'success');
-    return reconnectedStream;
-  }
-
-  // 3. Seamless reconnect failed — gracefully prompt pairing mechanism
-  try {
-    toast(`Bluetooth stream disconnected. Prompting pairing dialog for ${label}...`, 'info');
-    logPrinterDeviceEvent(printerType, name, address, 'PAIRING_REQUIRED', 'Seamless reconnect unavailable; re-prompting Bluetooth dialog');
-
-    const requestOptions = {
-      acceptAllDevices: true,
-      optionalServices: [
-        serviceUUID,
-        '6e400001-b5a3-f393-e0a9-e50e24dcca9e',
-        '000018f0-0000-1000-8000-00805f9b34fb',
-        '0000fff0-0000-1000-8000-00805f9b34fb',
-        '00001101-0000-1000-8000-00805f9b34fb',
-      ],
-    };
-
-    const device = await navigator.bluetooth.requestDevice(requestOptions);
-    if (!device) {
-      logPrinterDeviceEvent(printerType, name, address, 'PAIRING_CANCELLED', 'Device selection dialog closed without choice');
-      return null;
-    }
-
-    const server = await device.gatt.connect();
-    const { service, characteristic } = await resolveServiceAndCharacteristic(server, serviceUUID);
-
-    if (!characteristic) {
-      if (server.connected) server.disconnect();
-      toast(`Could not find writable GATT characteristic on "${device.name || name}". Check Service UUID in Settings.`, 'error');
-      logPrinterDeviceEvent(printerType, device.name || name, device.id || address, 'PRINT_FAILED', 'GATT characteristic missing');
-      return null;
-    }
-
-    attachDisconnectListener(device, printerType);
-    const newStream = {
-      device,
-      server,
-      service,
-      characteristic,
-      lastUsed: new Date(),
-    };
-    streamCache[printerType] = newStream;
-
-    logPrinterDeviceEvent(printerType, device.name || name, device.id || address, 'CONNECTED', 'Device paired and Bluetooth stream connected');
-    toast(`Paired and connected to ${label} printer ("${device.name || name}").`, 'success');
-
-    return newStream;
-  } catch (err) {
-    if (err.name === 'NotFoundError') {
-      toast(`Bluetooth device selection cancelled. Click Print KOT again when ready to pair.`, 'warning');
-      logPrinterDeviceEvent(printerType, name, address, 'PAIRING_CANCELLED', 'User cancelled Bluetooth pairing dialog');
-      return null;
-    }
-    console.error(`[BluetoothPrinter] Pairing / connection error for ${label}:`, err);
-    toast(`Bluetooth printer connection error: ${err.message}`, 'error');
-    logPrinterDeviceEvent(printerType, name, address, 'PRINT_FAILED', err.message);
-    return null;
-  }
-};
-
-/**
- * Sends formatted ESC/POS plain text directly to a Bluetooth thermal printer over Web Bluetooth API.
+ * Sends receipt text to the selected printer via Electron Native IPC.
  *
  * @param {'kot' | 'billing'} printerType Destination printer ('kot' or 'billing')
- * @param {string} receiptText ESC/POS plain text content
- * @param {Function} [toast] Custom toast handler
- * @returns {Promise<boolean>} True if print succeeded, false if error
+ * @param {string} receiptText Plain text receipt content
+ * @param {Function} [toast] Toast callback handler
+ * @returns {Promise<boolean>} True if print job submitted successfully, false if error
  */
-export const sendToBluetoothPrinter = async (printerType, receiptText, toast = console.log) => {
+export const sendToNativePrinter = async (printerType, receiptText, toast = console.log) => {
   const label = printerType === 'kot' ? 'Kitchen KOT' : 'Counter Billing';
+  const config = getPrinterConfig(printerType);
 
-  const stream = await ensurePrinterConnected(printerType, toast);
-  if (!stream || !stream.characteristic) {
+  if (!window.electronAPI || typeof window.electronAPI.printReceipt !== 'function') {
+    toast(`Native printing is only available when running inside the Electron POS app.`, 'warning');
     return false;
   }
 
   try {
-    // ESC/POS Command Byte Formatting
-    const initCmd = new Uint8Array([0x1b, 0x40]); // ESC @ (initialize printer)
-    const cutCmd = new Uint8Array([0x1d, 0x56, 0x42, 0x00]); // GS V B (paper cut)
+    console.log(`[PrinterService] Submitting silent print job for ${label} to printer "${config.name || 'Default Printer'}"`);
+    const result = await window.electronAPI.printReceipt({
+      printerName: config.name || '',
+      textContent: receiptText,
+    });
 
-    const encoder = new TextEncoder();
-    const textBytes = encoder.encode((receiptText || '') + '\n\n\n');
-
-    const fullBytes = new Uint8Array(initCmd.length + textBytes.length + cutCmd.length);
-    fullBytes.set(initCmd, 0);
-    fullBytes.set(textBytes, initCmd.length);
-    fullBytes.set(cutCmd, initCmd.length + textBytes.length);
-
-    // Stream byte chunks directly to printer characteristic
-    const characteristic = stream.characteristic;
-    const useWriteWithoutResponse =
-      characteristic.properties.writeWithoutResponse && !characteristic.properties.write;
-    const CHUNK_SIZE = 512;
-
-    for (let offset = 0; offset < fullBytes.length; offset += CHUNK_SIZE) {
-      const chunk = fullBytes.slice(offset, offset + CHUNK_SIZE);
-      if (useWriteWithoutResponse) {
-        await characteristic.writeValueWithoutResponse(chunk);
-      } else {
-        await characteristic.writeValue(chunk);
-      }
+    if (result && result.success) {
+      logPrinterDeviceEvent(
+        printerType,
+        config.name || 'Default System Printer',
+        'NATIVE_IPC',
+        'PRINT_SUCCESS',
+        'Receipt printed successfully via Electron Native IPC'
+      );
+      toast(`${label} printed successfully!`, 'success');
+      return true;
+    } else {
+      const errorMsg = result?.error || 'Native print execution failed';
+      console.error(`[PrinterService] Native print failed for ${label}:`, errorMsg);
+      logPrinterDeviceEvent(
+        printerType,
+        config.name || 'Default System Printer',
+        'NATIVE_IPC',
+        'PRINT_FAILED',
+        errorMsg
+      );
+      toast(`Print error on ${label}: ${errorMsg}`, 'error');
+      return false;
     }
-
-    stream.lastUsed = new Date();
-    logPrinterDeviceEvent(
-      printerType,
-      stream.device?.name || '',
-      stream.device?.id || '',
-      'PRINT_SUCCESS',
-      `Successfully printed receipt (${fullBytes.length} bytes over Web Bluetooth)`
-    );
-
-    return true;
   } catch (err) {
-    console.error(`[BluetoothPrinter] Error streaming bytes over Web Bluetooth to ${label}:`, err);
-    streamCache[printerType] = { device: null, server: null, service: null, characteristic: null, lastUsed: null };
-
-    logPrinterDeviceEvent(
-      printerType,
-      stream.device?.name || '',
-      stream.device?.id || '',
-      'PRINT_FAILED',
-      `Bluetooth stream error during write: ${err.message}`
-    );
-
-    toast(`Bluetooth print error on ${label}: ${err.message}. Please check printer power and range.`, 'error');
+    console.error(`[PrinterService] Exception during print call for ${label}:`, err);
+    toast(`Print error on ${label}: ${err.message}`, 'error');
     return false;
   }
 };
 
 /**
- * Manually disconnect cached printer GATT server stream.
+ * Alias export for backward compatibility across existing React components.
  */
-export const disconnectPrinterStream = (printerType) => {
-  const cache = streamCache[printerType];
-  if (cache && cache.server && cache.server.connected) {
-    try {
-      cache.server.disconnect();
-    } catch { /* ignore */ }
-  }
-  streamCache[printerType] = { device: null, server: null, service: null, characteristic: null, lastUsed: null };
-};
+export const sendToBluetoothPrinter = sendToNativePrinter;
+
+/**
+ * Legacy disconnect stub function.
+ */
+export const disconnectPrinterStream = () => {};

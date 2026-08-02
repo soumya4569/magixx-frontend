@@ -105,294 +105,44 @@ const Settings = () => {
     return saved ? JSON.parse(saved) : DEFAULT_PRINTERS
   })
 
-  const [kotPairStatus, setKotPairStatus] = useState('')   // 'scanning' | 'paired' | 'error' | ''
-  const [billPairStatus, setBillPairStatus] = useState('') // 'scanning' | 'paired' | 'error' | ''
-
-  // Bluetooth custom device chooser modal states
-  const [availableDevices, setAvailableDevices] = useState([])
-  const [showDeviceModal, setShowDeviceModal] = useState(false)
-  const selectedDeviceNameRef = useRef('')
+  // Electron Native system printers state
+  const [systemPrinters, setSystemPrinters] = useState([])
 
   useEffect(() => {
-    if (window.electronAPI && typeof window.electronAPI.onBluetoothDevices === 'function') {
-      const unsubscribe = window.electronAPI.onBluetoothDevices((devices) => {
-        setAvailableDevices(devices || [])
-        setShowDeviceModal(true)
-      })
-      return () => {
-        if (unsubscribe) unsubscribe()
-      }
+    if (window.electronAPI && typeof window.electronAPI.getSystemPrinters === 'function') {
+      window.electronAPI.getSystemPrinters().then((printersList) => {
+        if (Array.isArray(printersList)) {
+          setSystemPrinters(printersList)
+        }
+      }).catch(console.error)
     }
   }, [])
 
-  const handleSelectBluetoothDevice = (deviceId, deviceName) => {
-    selectedDeviceNameRef.current = deviceName || ''
-    if (window.electronAPI && typeof window.electronAPI.selectBluetoothDevice === 'function') {
-      window.electronAPI.selectBluetoothDevice(deviceId)
-    }
-    setShowDeviceModal(false)
-  }
 
-  const handleCancelBluetoothDevice = () => {
-    selectedDeviceNameRef.current = ''
-    if (window.electronAPI && typeof window.electronAPI.cancelBluetoothDevice === 'function') {
-      window.electronAPI.cancelBluetoothDevice()
-    }
-    setShowDeviceModal(false)
-  }
 
-  // Staff Directory state inside Settings
-  const [staff, setStaff] = useState(() => {
-    const saved = localStorage.getItem('pos_staff_members')
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved)
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed
-      } catch (e) {
-        console.error(e)
-      }
-    }
-    return []
-  })
-
-  const fetchStaffData = async () => {
-    let apiStaff = []
-    try {
-      const res = await api.get('/users')
-      if (Array.isArray(res.data) && res.data.length > 0) {
-        apiStaff = res.data.map((u) => ({
-          id: u._id || u.id,
-          _id: u._id || u.id,
-          name: u.name,
-          phone: u.phone,
-          email: u.email || `${(u.name || 'user').toLowerCase().replace(/\s+/g, '')}@magixx.com`,
-          role: u.role || 'Cashier',
-          status: u.status || 'active',
-          img: u.avatar || u.img || null,
-          since: u.createdAt ? new Date(u.createdAt).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }) : 'Jan 2024'
-        }))
-      }
-    } catch (err) {
-      console.warn('Backend /users endpoint not reachable or returned error:', err)
-    }
-
-    const activeUserStr = localStorage.getItem('pos_active_user') || localStorage.getItem('userInfo')
-    let activeUser = null
-    if (activeUserStr) {
-      try { activeUser = JSON.parse(activeUserStr) } catch (e) {}
-    }
-
-    const seededStaff = [
-      {
-        id: activeUser?._id || 'admin_1',
-        _id: activeUser?._id || 'admin_1',
-        name: activeUser?.name || 'Admin User',
-        phone: activeUser?.phone || '9876543210',
-        email: 'admin@magixx.com',
-        role: activeUser?.role || 'Admin',
-        status: 'active',
-        since: 'Jan 2024'
-      },
-      {
-        id: 'manager_1',
-        _id: 'manager_1',
-        name: 'Chef Manager',
-        phone: '9876543211',
-        email: 'chef_manager@magixx.com',
-        role: 'Manager',
-        status: 'active',
-        since: 'Mar 2024'
-      },
-      {
-        id: 'cashier_1',
-        _id: 'cashier_1',
-        name: 'Cashier 1',
-        phone: '9876543212',
-        email: 'cashier1@magixx.com',
-        role: 'Cashier',
-        status: 'active',
-        since: 'May 2024'
-      }
-    ]
-
-    setStaff((prev) => {
-      let merged = apiStaff.length > 0 ? apiStaff : (prev && prev.length > 0 ? prev : seededStaff)
-
-      if (activeUser) {
-        const matchingStaff = merged.find(s => s._id === activeUser._id || s.id === activeUser.id || s.phone === activeUser.phone || (s.role === 'Admin' && activeUser.role === 'Admin'))
-        if (matchingStaff) {
-          if (matchingStaff.name !== activeUser.name || matchingStaff.role !== activeUser.role) {
-            const updatedActive = {
-              ...activeUser,
-              name: matchingStaff.name,
-              phone: matchingStaff.phone || activeUser.phone,
-              role: matchingStaff.role || activeUser.role,
-              avatar: matchingStaff.img || activeUser.avatar
-            }
-            localStorage.setItem('pos_active_user', JSON.stringify(updatedActive))
-            localStorage.setItem('userInfo', JSON.stringify(updatedActive))
-            window.dispatchEvent(new Event('pos_user_updated'))
-          }
-          merged = merged.map(s => (s._id === matchingStaff._id || s.id === matchingStaff.id) ? {
-            ...s,
-            name: activeUser.name,
-            phone: activeUser.phone || s.phone,
-            role: activeUser.role || s.role,
-            img: activeUser.avatar || s.img
-          } : s)
-        } else if (activeUser.name) {
-          merged = [{
-            id: activeUser._id || 'admin_active',
-            _id: activeUser._id || 'admin_active',
-            name: activeUser.name,
-            phone: activeUser.phone || '9876543210',
-            email: activeUser.email || 'admin@magixx.com',
-            role: activeUser.role || 'Admin',
-            status: 'active',
-            img: activeUser.avatar || null,
-            since: 'Jan 2024'
-          }, ...merged]
-        }
-      }
-      localStorage.setItem('pos_staff_members', JSON.stringify(merged))
-      return merged
-    })
-  }
-
-  const fetchBackendSettings = async () => {
-    try {
-      const res = await api.get('/settings')
-      if (res.data) {
-        setBilling((prev) => ({
-          ...prev,
-          gstin: res.data.gstin || prev.gstin || '21ABCDE1234F1Z5',
-          invoiceHeader: res.data.invoiceHeader || prev.invoiceHeader || 'Main Road, Cafe Square, Odisha • Ph: 9000000000',
-          invoiceFooter: res.data.invoiceFooter || prev.invoiceFooter || 'THANK YOU FOR VISITING MAGIXX! HAVE A SWEET DAY • VISIT AGAIN',
-          taxRate: res.data.taxRate !== undefined ? String(res.data.taxRate) : prev.taxRate,
-          taxType: res.data.taxType || prev.taxType,
-          currency: res.data.currency || prev.currency,
-          footerNotes: res.data.invoiceFooter || prev.footerNotes || 'THANK YOU FOR VISITING MAGIXX! HAVE A SWEET DAY • VISIT AGAIN',
-        }))
-        setStore((prev) => {
-          const updated = {
-            ...prev,
-            brandName: res.data.brandName || prev.brandName || 'MAGIXX',
-            subtitle: res.data.subtitle || prev.subtitle || 'Sweets & Cafe',
-            storeName: res.data.storeName || prev.storeName || 'MAGIXX — Sweets & Cafe',
-            phone: res.data.phone || prev.phone || '9876543210',
-            email: res.data.email || prev.email || 'hello@magixx.com',
-            address: res.data.address || prev.address || 'Plot 42, Cafe Street, Gourmet City',
-          }
-          localStorage.setItem('pos_store_settings', JSON.stringify(updated))
-          return updated
-        })
-        
-        // Load saved printer config from backend & merge with localStorage persistence
-        const localSaved = localStorage.getItem('pos_printer_settings')
-        const localPrinters = localSaved ? JSON.parse(localSaved) : {}
-
-        const mergedPrinters = {
-          kotPrinterName: res.data.kotPrinterName || localPrinters.kotPrinterName || '',
-          kotPrinterAddress: res.data.kotPrinterAddress || localPrinters.kotPrinterAddress || '',
-          kotPrinterServiceUUID: res.data.kotPrinterServiceUUID || localPrinters.kotPrinterServiceUUID || GENERIC_SERIAL_UUID,
-          billingPrinterName: res.data.billingPrinterName || localPrinters.billingPrinterName || '',
-          billingPrinterAddress: res.data.billingPrinterAddress || localPrinters.billingPrinterAddress || '',
-          billingPrinterServiceUUID: res.data.billingPrinterServiceUUID || localPrinters.billingPrinterServiceUUID || GENERIC_SERIAL_UUID,
-        }
-
-        setPrinters(mergedPrinters)
-        localStorage.setItem('pos_printer_settings', JSON.stringify(mergedPrinters))
-      }
-    } catch (err) {
-      console.warn('Could not fetch backend settings:', err.message)
-    }
-  }
-
-  // Bluetooth: Scan and pair a printer — stores device name & hardware address for targeted connection
-  const scanAndPairPrinter = async (printerType) => {
-    if (!navigator.bluetooth) {
-      showToast('Web Bluetooth is not supported in this browser. Use Chrome or Edge on desktop/Android.')
-      return
-    }
-    const setStatus = printerType === 'kot' ? setKotPairStatus : setBillPairStatus
-    setStatus('scanning')
-    try {
-      const device = await navigator.bluetooth.requestDevice({
-        acceptAllDevices: true,
-        optionalServices: [
-          GENERIC_SERIAL_UUID,
-          NORDIC_UART_UUID,
-          '000018f0-0000-1000-8000-00805f9b34fb',
-          '0000fff0-0000-1000-8000-00805f9b34fb',
-          '00001101-0000-1000-8000-00805f9b34fb',
-        ],
-      })
-      const deviceName = device.name || selectedDeviceNameRef.current || 'Bluetooth Thermal Printer'
-      const deviceAddress = device.id || ''
-
-      const targetKeyName = printerType === 'kot' ? 'kotPrinterName' : 'billingPrinterName'
-      const targetKeyAddr = printerType === 'kot' ? 'kotPrinterAddress' : 'billingPrinterAddress'
-
-      let updatedPrinters = {}
-      setPrinters((prev) => {
-        updatedPrinters = {
-          ...prev,
-          [targetKeyName]: deviceName,
-          [targetKeyAddr]: deviceAddress,
-        }
-        localStorage.setItem('pos_printer_settings', JSON.stringify(updatedPrinters))
-        window.dispatchEvent(new Event('storage'))
-        return updatedPrinters
-      })
-
-      // Sync paired printer settings to backend API asynchronously
-      try {
-        await api.put('/settings', {
-          kotPrinterName: printerType === 'kot' ? deviceName : (printers.kotPrinterName || ''),
-          kotPrinterAddress: printerType === 'kot' ? deviceAddress : (printers.kotPrinterAddress || ''),
-          kotPrinterServiceUUID: printers.kotPrinterServiceUUID || GENERIC_SERIAL_UUID,
-          billingPrinterName: printerType === 'billing' ? deviceName : (printers.billingPrinterName || ''),
-          billingPrinterAddress: printerType === 'billing' ? deviceAddress : (printers.billingPrinterAddress || ''),
-          billingPrinterServiceUUID: printers.billingPrinterServiceUUID || GENERIC_SERIAL_UUID,
-        })
-      } catch (err) {
-        console.warn('Could not auto-sync paired printer settings to backend:', err.message)
-      }
-
-      setStatus('paired')
-      showToast(`Paired & Saved: "${deviceName}" (${deviceAddress}) as ${printerType === 'kot' ? 'KOT Kitchen' : 'Billing Counter'} printer`)
-    } catch (err) {
-      if (err.name !== 'NotFoundError') {
-        console.error('Bluetooth pairing error:', err)
-        showToast(`Bluetooth error: ${err.message}`)
-      }
-      setStatus('error')
-    }
-  }
-
-  // Test Print & Stream Connection Verification
+  // Native Print Execution Verification
   const handleTestPrint = async (printerType) => {
     const label = printerType === 'kot' ? 'Kitchen KOT' : 'Counter Billing'
-    const status = checkPrinterStreamStatus(printerType)
-    showToast(`Testing Bluetooth stream connection to ${label}...`)
+    showToast(`Sending native test print job to ${label}...`)
 
     const sampleReceipt = [
       '================================',
       `   MAGIXX - ${label.toUpperCase()} TEST`,
       '================================',
-      `Printer: ${printerType === 'kot' ? (printers.kotPrinterName || 'Not Set') : (printers.billingPrinterName || 'Not Set')}`,
+      `Printer: ${printerType === 'kot' ? (printers.kotPrinterName || 'Default System Printer') : (printers.billingPrinterName || 'Default System Printer')}`,
       `Time: ${new Date().toLocaleTimeString()}`,
-      `Stream Status: ${status.isConnected ? 'CONNECTED' : 'RECONNECTING / PAIRING'}`,
+      `Status: ELECTRON NATIVE IPC PRINT`,
       '--------------------------------',
-      '*** STREAM CONNECTION OK ***',
+      '*** TEST RECEIPT PRINT OK ***',
       '================================',
     ].join('\n')
 
     const printed = await sendToBluetoothPrinter(printerType, sampleReceipt, showToast)
     if (printed) {
-      showToast(`Test receipt printed successfully on ${label}! Stream is healthy.`)
+      showToast(`Test receipt printed successfully on ${label}!`)
     }
   }
+
 
   // Save printer config to localStorage and backend
   const savePrinterSettings = async () => {
@@ -1271,15 +1021,21 @@ const Settings = () => {
                 <p className="mt-0.5 text-xs text-zinc-500">Configure Bluetooth thermal printers for KOT (kitchen) and billing (counter) receipts. Requires Chrome or Edge browser with Bluetooth enabled.</p>
               </div>
 
-              {/* Browser Bluetooth support indicator */}
+              {/* Printer mode & status indicator */}
               <div className={`flex items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-xs font-bold ${
-                navigator.bluetooth
+                window.electronAPI && typeof window.electronAPI.printReceipt === 'function'
                   ? 'border-green-200 bg-green-50 text-green-800'
+                  : navigator.bluetooth
+                  ? 'border-blue-200 bg-blue-50 text-blue-800'
                   : 'border-amber-200 bg-amber-50 text-amber-800'
               }`}>
-                <span className={`h-2 w-2 rounded-full ${navigator.bluetooth ? 'bg-green-500' : 'bg-amber-400'}`} />
-                {navigator.bluetooth
-                  ? 'Web Bluetooth API is available in this browser — direct printer pairing supported'
+                <span className={`h-2 w-2 rounded-full ${
+                  window.electronAPI ? 'bg-green-500' : navigator.bluetooth ? 'bg-blue-500' : 'bg-amber-400'
+                }`} />
+                {window.electronAPI && typeof window.electronAPI.printReceipt === 'function'
+                  ? 'Electron Native Printing active — direct silent printing to OS Bluetooth Classic & USB thermal printers enabled'
+                  : navigator.bluetooth
+                  ? 'Web Bluetooth API available — Bluetooth LE printer pairing supported'
                   : 'Web Bluetooth is NOT available. Use Chrome or Edge on desktop/Android for Bluetooth printing.'}
               </div>
 
@@ -1297,7 +1053,7 @@ const Settings = () => {
                   </div>
                   {(kotPairStatus === 'paired' || Boolean(printers.kotPrinterName || printers.kotPrinterAddress)) && (
                     <span className="flex items-center gap-1 rounded-full bg-green-100 border border-green-200 px-2.5 py-1 text-[10px] font-extrabold text-green-700">
-                      <span className="h-1.5 w-1.5 rounded-full bg-green-500" />Paired
+                      <span className="h-1.5 w-1.5 rounded-full bg-green-500" />Configured
                     </span>
                   )}
                   {kotPairStatus === 'scanning' && (
@@ -1305,19 +1061,45 @@ const Settings = () => {
                   )}
                 </div>
 
+                {systemPrinters.length > 0 && (
+                  <div>
+                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-500">Select System / Bluetooth Printer (OS Paired)</label>
+                    <select
+                      value={printers.kotPrinterName}
+                      onChange={(e) => {
+                        const selectedName = e.target.value;
+                        setPrinters((p) => {
+                          const updated = { ...p, kotPrinterName: selectedName };
+                          localStorage.setItem('pos_printer_settings', JSON.stringify(updated));
+                          window.dispatchEvent(new Event('storage'));
+                          return updated;
+                        });
+                      }}
+                      className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 outline-none focus:border-yellow-400"
+                    >
+                      <option value="">-- Choose System Printer --</option>
+                      {systemPrinters.map((p, idx) => (
+                        <option key={idx} value={p.name}>
+                          {p.name} {p.isDefault ? '(OS Default)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-500">Device Name</label>
+                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-500">Device / Printer Name</label>
                     <input
                       type="text"
                       value={printers.kotPrinterName}
                       onChange={(e) => setPrinters((p) => ({ ...p, kotPrinterName: e.target.value }))}
-                      placeholder="e.g. PT-210 Kitchen"
+                      placeholder="e.g. POS-58 or PT-210 Kitchen"
                       className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 outline-none focus:border-yellow-400"
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-500">GATT Service UUID</label>
+                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-500">GATT Service UUID (Web BT)</label>
                     <input
                       type="text"
                       value={printers.kotPrinterServiceUUID}
@@ -1329,22 +1111,24 @@ const Settings = () => {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => scanAndPairPrinter('kot')}
-                    disabled={kotPairStatus === 'scanning'}
-                    className="flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-2 text-xs font-extrabold text-white hover:bg-zinc-700 transition disabled:opacity-50 cursor-pointer"
-                  >
-                    <Icon d={IC.bluetooth} size={13} />
-                    {kotPairStatus === 'scanning' ? 'Scanning…' : 'Scan & Pair KOT Printer'}
-                  </button>
+                  {navigator.bluetooth && (
+                    <button
+                      type="button"
+                      onClick={() => scanAndPairPrinter('kot')}
+                      disabled={kotPairStatus === 'scanning'}
+                      className="flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-2 text-xs font-extrabold text-white hover:bg-zinc-700 transition disabled:opacity-50 cursor-pointer"
+                    >
+                      <Icon d={IC.bluetooth} size={13} />
+                      {kotPairStatus === 'scanning' ? 'Scanning…' : 'Scan & Pair Web BT'}
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => handleTestPrint('kot')}
                     className="flex items-center gap-1.5 rounded-lg border border-yellow-300 bg-yellow-50 px-3 py-2 text-xs font-extrabold text-yellow-900 hover:bg-yellow-100 transition cursor-pointer"
                   >
                     <Icon d={IC.printer} size={13} />
-                    Test Print &amp; Verify Stream
+                    Test Print Receipt
                   </button>
                   {(printers.kotPrinterName || printers.kotPrinterAddress) && (
                     <button
@@ -1382,7 +1166,7 @@ const Settings = () => {
                   </div>
                   {(billPairStatus === 'paired' || Boolean(printers.billingPrinterName || printers.billingPrinterAddress)) && (
                     <span className="flex items-center gap-1 rounded-full bg-green-100 border border-green-200 px-2.5 py-1 text-[10px] font-extrabold text-green-700">
-                      <span className="h-1.5 w-1.5 rounded-full bg-green-500" />Paired
+                      <span className="h-1.5 w-1.5 rounded-full bg-green-500" />Configured
                     </span>
                   )}
                   {billPairStatus === 'scanning' && (
@@ -1390,19 +1174,45 @@ const Settings = () => {
                   )}
                 </div>
 
+                {systemPrinters.length > 0 && (
+                  <div>
+                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-500">Select System / Bluetooth Printer (OS Paired)</label>
+                    <select
+                      value={printers.billingPrinterName}
+                      onChange={(e) => {
+                        const selectedName = e.target.value;
+                        setPrinters((p) => {
+                          const updated = { ...p, billingPrinterName: selectedName };
+                          localStorage.setItem('pos_printer_settings', JSON.stringify(updated));
+                          window.dispatchEvent(new Event('storage'));
+                          return updated;
+                        });
+                      }}
+                      className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 outline-none focus:border-yellow-400"
+                    >
+                      <option value="">-- Choose System Printer --</option>
+                      {systemPrinters.map((p, idx) => (
+                        <option key={idx} value={p.name}>
+                          {p.name} {p.isDefault ? '(OS Default)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-500">Device Name</label>
+                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-500">Device / Printer Name</label>
                     <input
                       type="text"
                       value={printers.billingPrinterName}
                       onChange={(e) => setPrinters((p) => ({ ...p, billingPrinterName: e.target.value }))}
-                      placeholder="e.g. PT-210 Counter"
+                      placeholder="e.g. POS-58 or PT-210 Counter"
                       className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 outline-none focus:border-yellow-400"
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-500">GATT Service UUID</label>
+                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-500">GATT Service UUID (Web BT)</label>
                     <input
                       type="text"
                       value={printers.billingPrinterServiceUUID}
@@ -1414,23 +1224,26 @@ const Settings = () => {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => scanAndPairPrinter('billing')}
-                    disabled={billPairStatus === 'scanning'}
-                    className="flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-2 text-xs font-extrabold text-white hover:bg-zinc-700 transition disabled:opacity-50 cursor-pointer"
-                  >
-                    <Icon d={IC.bluetooth} size={13} />
-                    {billPairStatus === 'scanning' ? 'Scanning…' : 'Scan & Pair Billing Printer'}
-                  </button>
+                  {navigator.bluetooth && (
+                    <button
+                      type="button"
+                      onClick={() => scanAndPairPrinter('billing')}
+                      disabled={billPairStatus === 'scanning'}
+                      className="flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-2 text-xs font-extrabold text-white hover:bg-zinc-700 transition disabled:opacity-50 cursor-pointer"
+                    >
+                      <Icon d={IC.bluetooth} size={13} />
+                      {billPairStatus === 'scanning' ? 'Scanning…' : 'Scan & Pair Web BT'}
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => handleTestPrint('billing')}
                     className="flex items-center gap-1.5 rounded-lg border border-yellow-300 bg-yellow-50 px-3 py-2 text-xs font-extrabold text-yellow-900 hover:bg-yellow-100 transition cursor-pointer"
                   >
                     <Icon d={IC.printer} size={13} />
-                    Test Print &amp; Verify Stream
+                    Test Print Receipt
                   </button>
+
                   {(printers.billingPrinterName || printers.billingPrinterAddress) && (
                     <button
                       type="button"

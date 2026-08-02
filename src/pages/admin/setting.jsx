@@ -226,18 +226,17 @@ const Settings = () => {
             return updated
           })
         }
-        if (res.data.kotPrinterName || res.data.billingPrinterName) {
+        if (res.data && (res.data.kotPrinterName !== undefined || res.data.billingPrinterName !== undefined)) {
           setPrinters(prev => {
             const safePrev = prev || DEFAULT_PRINTERS
             const updated = {
-              ...DEFAULT_PRINTERS,
               ...safePrev,
-              kotPrinterName: res.data.kotPrinterName || safePrev.kotPrinterName,
-              kotPrinterAddress: res.data.kotPrinterAddress || safePrev.kotPrinterAddress,
-              kotPrinterServiceUUID: res.data.kotPrinterServiceUUID || safePrev.kotPrinterServiceUUID,
-              billingPrinterName: res.data.billingPrinterName || safePrev.billingPrinterName,
-              billingPrinterAddress: res.data.billingPrinterAddress || safePrev.billingPrinterAddress,
-              billingPrinterServiceUUID: res.data.billingPrinterServiceUUID || safePrev.billingPrinterServiceUUID,
+              kotPrinterName: res.data.kotPrinterName !== undefined ? res.data.kotPrinterName : safePrev.kotPrinterName,
+              kotPrinterAddress: res.data.kotPrinterAddress !== undefined ? res.data.kotPrinterAddress : safePrev.kotPrinterAddress,
+              kotPrinterServiceUUID: res.data.kotPrinterServiceUUID || safePrev.kotPrinterServiceUUID || GENERIC_SERIAL_UUID,
+              billingPrinterName: res.data.billingPrinterName !== undefined ? res.data.billingPrinterName : safePrev.billingPrinterName,
+              billingPrinterAddress: res.data.billingPrinterAddress !== undefined ? res.data.billingPrinterAddress : safePrev.billingPrinterAddress,
+              billingPrinterServiceUUID: res.data.billingPrinterServiceUUID || safePrev.billingPrinterServiceUUID || GENERIC_SERIAL_UUID,
             }
             localStorage.setItem('pos_printer_settings', JSON.stringify(updated))
             return updated
@@ -398,6 +397,56 @@ const Settings = () => {
       console.warn('Could not save printer settings to backend:', err.message)
     }
     showToast('Printer configuration saved successfully!')
+  }
+
+  // Remove KOT Kitchen Printer cleanly
+  const handleRemoveKotPrinter = async () => {
+    setKotPairStatus('')
+    setPrinters((prev) => {
+      const safePrev = prev || DEFAULT_PRINTERS
+      const updated = {
+        ...safePrev,
+        kotPrinterName: '',
+        kotPrinterAddress: ''
+      }
+      localStorage.setItem('pos_printer_settings', JSON.stringify(updated))
+      window.dispatchEvent(new Event('storage'))
+      return updated
+    })
+    try {
+      await api.put('/settings', {
+        kotPrinterName: '',
+        kotPrinterAddress: ''
+      })
+    } catch (err) {
+      console.warn('Backend printer deletion sync warning:', err.message)
+    }
+    showToast('KOT Kitchen printer removed successfully.')
+  }
+
+  // Remove Billing Counter Printer cleanly
+  const handleRemoveBillingPrinter = async () => {
+    setBillPairStatus('')
+    setPrinters((prev) => {
+      const safePrev = prev || DEFAULT_PRINTERS
+      const updated = {
+        ...safePrev,
+        billingPrinterName: '',
+        billingPrinterAddress: ''
+      }
+      localStorage.setItem('pos_printer_settings', JSON.stringify(updated))
+      window.dispatchEvent(new Event('storage'))
+      return updated
+    })
+    try {
+      await api.put('/settings', {
+        billingPrinterName: '',
+        billingPrinterAddress: ''
+      })
+    } catch (err) {
+      console.warn('Backend printer deletion sync warning:', err.message)
+    }
+    showToast('Billing Counter printer removed successfully.')
   }
 
   // Staff Modal States
@@ -1347,17 +1396,7 @@ const Settings = () => {
                   {(safePrinters.kotPrinterName || safePrinters.kotPrinterAddress) && (
                     <button
                       type="button"
-                      onClick={() => {
-                        setPrinters((p) => {
-                          const safePrev = p || DEFAULT_PRINTERS;
-                          const updated = { ...safePrev, kotPrinterName: '', kotPrinterAddress: '' };
-                          localStorage.setItem('pos_printer_settings', JSON.stringify(updated));
-                          window.dispatchEvent(new Event('storage'));
-                          api.put('/settings', updated).catch(() => {});
-                          return updated;
-                        });
-                        setKotPairStatus('');
-                      }}
+                      onClick={handleRemoveKotPrinter}
                       className="flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-100 transition cursor-pointer"
                     >
                       <Icon d={IC.unlink} size={12} />
@@ -1463,17 +1502,7 @@ const Settings = () => {
                   {(safePrinters.billingPrinterName || safePrinters.billingPrinterAddress) && (
                     <button
                       type="button"
-                      onClick={() => {
-                        setPrinters((p) => {
-                          const safePrev = p || DEFAULT_PRINTERS;
-                          const updated = { ...safePrev, billingPrinterName: '', billingPrinterAddress: '' };
-                          localStorage.setItem('pos_printer_settings', JSON.stringify(updated));
-                          window.dispatchEvent(new Event('storage'));
-                          api.put('/settings', updated).catch(() => {});
-                          return updated;
-                        });
-                        setBillPairStatus('');
-                      }}
+                      onClick={handleRemoveBillingPrinter}
                       className="flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-100 transition cursor-pointer"
                     >
                       <Icon d={IC.unlink} size={12} />

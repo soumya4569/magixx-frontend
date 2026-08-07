@@ -136,11 +136,9 @@ const Settings = () => {
 
   // Electron Native System Printers state
   const [systemPrinters, setSystemPrinters] = useState([])
+  const [isRefreshingPrinters, setIsRefreshingPrinters] = useState(false)
 
-  // Bluetooth Pairing Modal & Status States
-  const [showDeviceModal, setShowDeviceModal] = useState(false)
-  const [availableDevices, setAvailableDevices] = useState([])
-  const [targetPrinterType, setTargetPrinterType] = useState('kot')
+  // Printer status indicators (no longer used for scanning — kept for configured badge)
   const [kotPairStatus, setKotPairStatus] = useState('')
   const [billPairStatus, setBillPairStatus] = useState('')
 
@@ -157,7 +155,6 @@ const Settings = () => {
   const safePrinters = { ...DEFAULT_PRINTERS, ...(printers || {}) }
   const safeStaff = Array.isArray(staff) ? staff : []
   const safeSystemPrinters = Array.isArray(systemPrinters) ? systemPrinters : []
-  const safeAvailableDevices = Array.isArray(availableDevices) ? availableDevices : []
 
   // Load installed OS printers if running inside Electron
   useEffect(() => {
@@ -170,18 +167,26 @@ const Settings = () => {
     }
   }, [])
 
-  // Listen for Electron IPC bluetooth device lists if enabled
-  useEffect(() => {
-    if (window.electronAPI && typeof window.electronAPI.onBluetoothDeviceList === 'function') {
-      const cleanup = window.electronAPI.onBluetoothDeviceList((deviceList) => {
-        setAvailableDevices(deviceList || [])
-        setShowDeviceModal(true)
-      })
-      return () => {
-        if (typeof cleanup === 'function') cleanup()
-      }
+  // Refresh OS printer list on demand (Electron only)
+  const refreshSystemPrinters = async () => {
+    if (!window.electronAPI || typeof window.electronAPI.getSystemPrinters !== 'function') {
+      showToast('OS printer list is only available in the desktop app. Pair your printer via Windows Settings → Bluetooth & devices first, then reopen the app.')
+      return
     }
-  }, [])
+    setIsRefreshingPrinters(true)
+    try {
+      const list = await window.electronAPI.getSystemPrinters()
+      if (Array.isArray(list)) {
+        setSystemPrinters(list)
+        showToast(`Found ${list.length} OS printer${list.length !== 1 ? 's' : ''}. Select one from the dropdown below.`)
+      }
+    } catch (err) {
+      console.warn('Could not refresh system printers:', err)
+      showToast('Could not load OS printers. Make sure your printer is paired in Windows Settings.')
+    } finally {
+      setIsRefreshingPrinters(false)
+    }
+  }
 
   // Sync staff members from backend API
   const fetchStaffData = async () => {
@@ -270,102 +275,29 @@ const Settings = () => {
     }
   }, [staff])
 
-  // Bluetooth Pairing Request Handler with localStorage persistence & storage events
-  const scanAndPairPrinter = async (type) => {
-    setTargetPrinterType(type)
-    if (type === 'kot') setKotPairStatus('scanning')
-    else setBillPairStatus('scanning')
-
-    showToast(`Scanning for Bluetooth printer (${type.toUpperCase()})...`)
-
-    try {
-      if (navigator.bluetooth && typeof navigator.bluetooth.requestDevice === 'function') {
-        const device = await navigator.bluetooth.requestDevice({
-          acceptAllDevices: true,
-          optionalServices: [
-            GENERIC_SERIAL_UUID,
-            '6e400001-b5a3-f393-e0a9-e50e24dcca9e',
-            '0000fff0-0000-1000-8000-00805f9b34fb',
-          ],
-        })
-
-        if (device) {
-          const deviceName = device.name || 'BT Printer'
-          const deviceId = device.id || ''
-
-          setPrinters(prev => {
-            const safePrev = prev || DEFAULT_PRINTERS
-            const updated = {
-              ...safePrev,
-              ...(type === 'kot'
-                ? { kotPrinterName: deviceName, kotPrinterAddress: deviceId }
-                : { billingPrinterName: deviceName, billingPrinterAddress: deviceId })
-            }
-            localStorage.setItem('pos_printer_settings', JSON.stringify(updated))
-            window.dispatchEvent(new Event('storage'))
-            return updated
-          })
-
-          if (type === 'kot') setKotPairStatus('paired')
-          else setBillPairStatus('paired')
-
-          showToast(`Successfully paired ${deviceName} for ${type.toUpperCase()}!`)
-
-          api.put('/settings', {
-            ...(type === 'kot'
-              ? { kotPrinterName: deviceName, kotPrinterAddress: deviceId }
-              : { billingPrinterName: deviceName, billingPrinterAddress: deviceId }),
-          }).catch(console.warn)
-        }
-      } else {
-        showToast('Web Bluetooth is not supported in this environment. Select an OS printer from the dropdown.')
-        if (type === 'kot') setKotPairStatus('')
-        else setBillPairStatus('')
+  // Select an OS system printer directly (no Bluetooth popup)
+  const selectOsPrinter = (type, printerName) => {
+    if (!printerName) return
+    setPrinters(prev => {
+      const safePrev = prev || DEFAULT_PRINTERS
+      const updated = {
+        ...safePrev,
+        ...(type === 'kot'
+          ? { kotPrinterName: printerName, kotPrinterAddress: '' }
+          : { billingPrinterName: printerName, billingPrinterAddress: '' })
       }
-    } catch (err) {
-      console.warn('Bluetooth pairing cancelled or error:', err?.message)
-      showToast(`Pairing cancelled or error: ${err?.message || 'Cancelled'}`)
-      if (type === 'kot') setKotPairStatus('')
-      else setBillPairStatus('')
-    }
-  }
-
-  const handleSelectBluetoothDevice = (deviceId, deviceName) => {
-    try {
-      setPrinters(prev => {
-        const safePrev = prev || DEFAULT_PRINTERS
-        const updated = {
-          ...safePrev,
-          ...(targetPrinterType === 'kot'
-            ? { kotPrinterName: deviceName, kotPrinterAddress: deviceId }
-            : { billingPrinterName: deviceName, billingPrinterAddress: deviceId })
-        }
-        localStorage.setItem('pos_printer_settings', JSON.stringify(updated))
-        window.dispatchEvent(new Event('storage'))
-        return updated
-      })
-
-      if (window.electronAPI && typeof window.electronAPI.chooseBluetoothDevice === 'function') {
-        window.electronAPI.chooseBluetoothDevice(deviceId)
-      }
-
-      setShowDeviceModal(false)
-      if (targetPrinterType === 'kot') setKotPairStatus('paired')
-      else setBillPairStatus('paired')
-
-      showToast(`Connected ${deviceName}!`)
-    } catch (e) {
-      console.error('Error selecting bluetooth device:', e)
-    }
-  }
-
-  const handleCancelBluetoothDevice = () => {
-    if (window.electronAPI && typeof window.electronAPI.cancelBluetoothDevice === 'function') {
-      window.electronAPI.cancelBluetoothDevice()
-    }
-    setShowDeviceModal(false)
-    if (targetPrinterType === 'kot') setKotPairStatus('')
-    else setBillPairStatus('')
+      localStorage.setItem('pos_printer_settings', JSON.stringify(updated))
+      window.dispatchEvent(new Event('storage'))
+      return updated
+    })
+    if (type === 'kot') setKotPairStatus('paired')
+    else setBillPairStatus('paired')
+    showToast(`${type === 'kot' ? 'KOT Kitchen' : 'Billing Counter'} printer set to "${printerName}"`)
+    api.put('/settings', {
+      ...(type === 'kot'
+        ? { kotPrinterName: printerName, kotPrinterAddress: '' }
+        : { billingPrinterName: printerName, billingPrinterAddress: '' })
+    }).catch(console.warn)
   }
 
   // Native & Bluetooth Test Printing Handler
@@ -1291,25 +1223,42 @@ const Settings = () => {
             <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm space-y-5">
               <div className="border-b border-zinc-100 pb-3">
                 <h2 className="text-base font-extrabold text-zinc-900">Hardware &amp; Printers</h2>
-                <p className="mt-0.5 text-xs text-zinc-500">Configure Bluetooth thermal printers for KOT (kitchen) and billing (counter) receipts.</p>
+                <p className="mt-0.5 text-xs text-zinc-500">Select your OS-paired printers directly from the dropdown. Pair printers first via Windows Settings → Bluetooth &amp; devices or Printers &amp; scanners.</p>
               </div>
 
               {/* Status Banner */}
               <div className={`flex items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-xs font-bold ${
                 window.electronAPI && typeof window.electronAPI.printReceipt === 'function'
                   ? 'border-green-200 bg-green-50 text-green-800'
-                  : navigator.bluetooth
-                  ? 'border-blue-200 bg-blue-50 text-blue-800'
                   : 'border-amber-200 bg-amber-50 text-amber-800'
               }`}>
                 <span className={`h-2 w-2 rounded-full ${
-                  window.electronAPI ? 'bg-green-500' : navigator.bluetooth ? 'bg-blue-500' : 'bg-amber-400'
+                  window.electronAPI ? 'bg-green-500' : 'bg-amber-400'
                 }`} />
                 {window.electronAPI && typeof window.electronAPI.printReceipt === 'function'
-                  ? 'Electron Native Printing active — direct silent printing to OS Bluetooth Classic & USB thermal printers enabled'
-                  : navigator.bluetooth
-                  ? 'Web Bluetooth API available — Bluetooth LE printer pairing supported'
-                  : 'Web Bluetooth is NOT available. Use Chrome or Edge on desktop/Android for Bluetooth printing.'}
+                  ? `Electron Desktop App — OS system printer list loaded (${safeSystemPrinters.length} printer${safeSystemPrinters.length !== 1 ? 's' : ''} found). Select below.`
+                  : 'Running in browser — open the MAGIXX desktop app to access OS-paired printers directly. You can still type a printer name manually below.'}
+              </div>
+
+              {/* Refresh Printers Button */}
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] text-zinc-500 font-medium">
+                  {safeSystemPrinters.length > 0
+                    ? `${safeSystemPrinters.length} printer${safeSystemPrinters.length !== 1 ? 's' : ''} detected from OS`
+                    : 'No OS printers loaded yet'}
+                </p>
+                <button
+                  type="button"
+                  id="refresh-printers-btn"
+                  onClick={refreshSystemPrinters}
+                  disabled={isRefreshingPrinters}
+                  className="flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-[11px] font-bold text-zinc-700 hover:bg-zinc-100 transition active:scale-95 disabled:opacity-50 cursor-pointer"
+                >
+                  <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={isRefreshingPrinters ? 'animate-spin' : ''}>
+                    <path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
+                  </svg>
+                  {isRefreshingPrinters ? 'Loading…' : 'Refresh Printer List'}
+                </button>
               </div>
 
               {/* KOT Kitchen Printer */}
@@ -1329,43 +1278,40 @@ const Settings = () => {
                       <span className="h-1.5 w-1.5 rounded-full bg-green-500" />Configured
                     </span>
                   )}
-                  {kotPairStatus === 'scanning' && (
-                    <span className="rounded-full bg-blue-100 border border-blue-200 px-2.5 py-1 text-[10px] font-extrabold text-blue-700 animate-pulse">Scanning…</span>
-                  )}
                 </div>
 
-                {safeSystemPrinters.length > 0 && (
-                  <div>
-                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-500">Select System / Bluetooth Printer (OS Paired)</label>
+                {/* OS System Printer Dropdown — always shown, populated when Electron lists are available */}
+                <div>
+                  <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                    {safeSystemPrinters.length > 0 ? 'Select OS-Paired System Printer' : 'OS Printer List (not available in browser)'}
+                  </label>
+                  {safeSystemPrinters.length > 0 ? (
                     <select
+                      id="kot-printer-select"
                       value={safePrinters.kotPrinterName}
-                      onChange={(e) => {
-                        const selectedName = e.target.value;
-                        setPrinters((p) => {
-                          const safePrev = p || DEFAULT_PRINTERS;
-                          const updated = { ...safePrev, kotPrinterName: selectedName };
-                          localStorage.setItem('pos_printer_settings', JSON.stringify(updated));
-                          window.dispatchEvent(new Event('storage'));
-                          return updated;
-                        });
-                      }}
-                      className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 outline-none focus:border-yellow-400"
+                      onChange={(e) => selectOsPrinter('kot', e.target.value)}
+                      className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 outline-none focus:border-yellow-400 focus:ring-2 focus:ring-yellow-100"
                     >
-                      <option value="">-- Choose System Printer --</option>
+                      <option value="">-- Choose a printer --</option>
                       {safeSystemPrinters.map((p, idx) => (
                         <option key={idx} value={p.name}>
-                          {p.name} {p.isDefault ? '(OS Default)' : ''}
+                          {p.name}{p.isDefault ? ' (OS Default)' : ''}
                         </option>
                       ))}
                     </select>
-                  </div>
-                )}
+                  ) : (
+                    <div className="rounded-lg border border-dashed border-zinc-200 bg-white px-3 py-2.5 text-[11px] text-zinc-400">
+                      Pair your printer in <strong className="text-zinc-600">Windows Settings → Bluetooth &amp; devices</strong> first, then click <strong className="text-zinc-600">Refresh Printer List</strong> above.
+                    </div>
+                  )}
+                </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-500">Device / Printer Name</label>
+                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-500">Device / Printer Name (manual override)</label>
                     <input
                       type="text"
+                      id="kot-printer-name-input"
                       value={safePrinters.kotPrinterName}
                       onChange={(e) => setPrinters((p) => ({ ...(p || DEFAULT_PRINTERS), kotPrinterName: e.target.value }))}
                       placeholder="e.g. POS-58 or PT-210 Kitchen"
@@ -1385,17 +1331,6 @@ const Settings = () => {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 pt-1">
-                  {navigator.bluetooth && (
-                    <button
-                      type="button"
-                      onClick={() => scanAndPairPrinter('kot')}
-                      disabled={kotPairStatus === 'scanning'}
-                      className="flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-2 text-xs font-extrabold text-white hover:bg-zinc-700 transition disabled:opacity-50 cursor-pointer"
-                    >
-                      <Icon d={IC.bluetooth} size={13} />
-                      {kotPairStatus === 'scanning' ? 'Scanning…' : 'Scan & Pair KOT Printer'}
-                    </button>
-                  )}
                   <button
                     type="button"
                     onClick={() => handleTestPrint('kot')}
@@ -1434,43 +1369,40 @@ const Settings = () => {
                       <span className="h-1.5 w-1.5 rounded-full bg-green-500" />Configured
                     </span>
                   )}
-                  {billPairStatus === 'scanning' && (
-                    <span className="rounded-full bg-blue-100 border border-blue-200 px-2.5 py-1 text-[10px] font-extrabold text-blue-700 animate-pulse">Scanning…</span>
-                  )}
                 </div>
 
-                {safeSystemPrinters.length > 0 && (
-                  <div>
-                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-500">Select System / Bluetooth Printer (OS Paired)</label>
+                {/* OS System Printer Dropdown */}
+                <div>
+                  <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                    {safeSystemPrinters.length > 0 ? 'Select OS-Paired System Printer' : 'OS Printer List (not available in browser)'}
+                  </label>
+                  {safeSystemPrinters.length > 0 ? (
                     <select
+                      id="billing-printer-select"
                       value={safePrinters.billingPrinterName}
-                      onChange={(e) => {
-                        const selectedName = e.target.value;
-                        setPrinters((p) => {
-                          const safePrev = p || DEFAULT_PRINTERS;
-                          const updated = { ...safePrev, billingPrinterName: selectedName };
-                          localStorage.setItem('pos_printer_settings', JSON.stringify(updated));
-                          window.dispatchEvent(new Event('storage'));
-                          return updated;
-                        });
-                      }}
-                      className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 outline-none focus:border-yellow-400"
+                      onChange={(e) => selectOsPrinter('billing', e.target.value)}
+                      className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 outline-none focus:border-yellow-400 focus:ring-2 focus:ring-yellow-100"
                     >
-                      <option value="">-- Choose System Printer --</option>
+                      <option value="">-- Choose a printer --</option>
                       {safeSystemPrinters.map((p, idx) => (
                         <option key={idx} value={p.name}>
-                          {p.name} {p.isDefault ? '(OS Default)' : ''}
+                          {p.name}{p.isDefault ? ' (OS Default)' : ''}
                         </option>
                       ))}
                     </select>
-                  </div>
-                )}
+                  ) : (
+                    <div className="rounded-lg border border-dashed border-zinc-200 bg-white px-3 py-2.5 text-[11px] text-zinc-400">
+                      Pair your printer in <strong className="text-zinc-600">Windows Settings → Bluetooth &amp; devices</strong> first, then click <strong className="text-zinc-600">Refresh Printer List</strong> above.
+                    </div>
+                  )}
+                </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-500">Device / Printer Name</label>
+                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-500">Device / Printer Name (manual override)</label>
                     <input
                       type="text"
+                      id="billing-printer-name-input"
                       value={safePrinters.billingPrinterName}
                       onChange={(e) => setPrinters((p) => ({ ...(p || DEFAULT_PRINTERS), billingPrinterName: e.target.value }))}
                       placeholder="e.g. POS-58 or PT-210 Counter"
@@ -1490,17 +1422,6 @@ const Settings = () => {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 pt-1">
-                  {navigator.bluetooth && (
-                    <button
-                      type="button"
-                      onClick={() => scanAndPairPrinter('billing')}
-                      disabled={billPairStatus === 'scanning'}
-                      className="flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-2 text-xs font-extrabold text-white hover:bg-zinc-700 transition disabled:opacity-50 cursor-pointer"
-                    >
-                      <Icon d={IC.bluetooth} size={13} />
-                      {billPairStatus === 'scanning' ? 'Scanning…' : 'Scan & Pair Billing Printer'}
-                    </button>
-                  )}
                   <button
                     type="button"
                     onClick={() => handleTestPrint('billing')}
@@ -1509,7 +1430,6 @@ const Settings = () => {
                     <Icon d={IC.printer} size={13} />
                     Test Print Receipt
                   </button>
-
                   {(safePrinters.billingPrinterName || safePrinters.billingPrinterAddress) && (
                     <button
                       type="button"

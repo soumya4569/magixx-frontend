@@ -553,6 +553,12 @@ const Order = () => {
     total = subtotal + taxAmount
   }
 
+  // CGST + SGST split: each component = half of total tax
+  const cgstRate = taxRatePercent / 2
+  const sgstRate = taxRatePercent / 2
+  const cgstAmount = taxAmount / 2
+  const sgstAmount = taxAmount / 2
+
   const activeCustomerPhone = activeToken ? (tokens.get(activeToken)?.customerPhone ?? '') : ''
   const activeCustomerName = activeToken ? (tokens.get(activeToken)?.customerName ?? '') : ''
 
@@ -1079,8 +1085,10 @@ const Order = () => {
       }),
       '--------------------------------',
       `Subtotal : ${billingSettings.currency || '₹'} ${Number(subtotal).toFixed(2)}`,
-      `Tax      : ${billingSettings.currency || '₹'} ${Number(taxAmount).toFixed(2)}`,
+      `CGST ${cgstRate.toFixed(2)}% : ${billingSettings.currency || '₹'} ${Number(cgstAmount).toFixed(2)}`,
+      `SGST ${sgstRate.toFixed(2)}% : ${billingSettings.currency || '₹'} ${Number(sgstAmount).toFixed(2)}`,
       `TOTAL    : ${billingSettings.currency || '₹'} ${Number(total).toFixed(2)}`,
+      `(Incl. Tax: ${billingSettings.currency || '₹'} ${Number(taxAmount).toFixed(2)})`,
       '================================',
       billingSettings.invoiceFooter || '',
     ].filter(Boolean).join('\n')
@@ -1113,6 +1121,8 @@ const Order = () => {
         items: validOrderItems,
         subtotal: Number(subtotal || 0),
         tax: Number(taxAmount || 0),
+        cgst: Number(cgstAmount || 0),
+        sgst: Number(sgstAmount || 0),
         total: Number(total || 0),
         paymentMethod: normalizedMethod,
         orderType: activeOrderType || 'Dine-in',
@@ -1716,8 +1726,12 @@ const Order = () => {
                 <span className="font-medium text-gray-700">₹{subtotal.toFixed(2)}</span>
               </div>
               <div className="flex items-center justify-between text-xs text-gray-500">
-                <span>Tax ({taxRatePercent.toFixed(2)}% {isInclusive ? 'Incl.' : 'Excl.'})</span>
-                <span className="font-medium text-orange-600">+ ₹{taxAmount.toFixed(2)}</span>
+                <span>CGST ({cgstRate.toFixed(2)}% {isInclusive ? 'Incl.' : 'Excl.'})</span>
+                <span className="font-medium text-orange-500">+ ₹{cgstAmount.toFixed(2)}</span>
+              </div>
+              <div className="flex items-center justify-between text-xs text-gray-500">
+                <span>SGST ({sgstRate.toFixed(2)}% {isInclusive ? 'Incl.' : 'Excl.'})</span>
+                <span className="font-medium text-orange-600">+ ₹{sgstAmount.toFixed(2)}</span>
               </div>
               <div className="mt-1.5 flex items-center justify-between border-t border-gray-200 pt-1.5">
                 <span className="text-sm font-extrabold text-gray-900">Total</span>
@@ -1876,8 +1890,12 @@ const Order = () => {
                   <span>₹{lastPrintedDoc.subtotal?.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>TAX (GST 5.0%):</span>
-                  <span>+ ₹{lastPrintedDoc.taxAmount?.toFixed(2)}</span>
+                  <span>CGST ({(parseFloat(billingSettings.taxRate || '5.00') / 2).toFixed(2)}%):</span>
+                  <span>+ ₹{((lastPrintedDoc.taxAmount || 0) / 2).toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>SGST ({(parseFloat(billingSettings.taxRate || '5.00') / 2).toFixed(2)}%):</span>
+                  <span>+ ₹{((lastPrintedDoc.taxAmount || 0) / 2).toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-xs font-black pt-1 border-t border-black">
                   <span>GRAND TOTAL:</span>

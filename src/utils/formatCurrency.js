@@ -12,4 +12,13 @@ export const formatCurrency = (amount, options = {}) => {
   return `₹${formatted}`
 }
 
+export const formatThermalCurrency = (amount, options = {}) => {
+  const num = Number(amount) || 0
+  const decimals = options.decimals ?? 2
+  const prefix = options.prefix ?? 'Rs.'
+  const formatted = num.toFixed(decimals)
+  return prefix ? `${prefix}${formatted}` : formatted
+}
+
 export default formatCurrency
+

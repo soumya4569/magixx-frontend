@@ -49,6 +49,8 @@ ipcMain.handle('print-receipt', async (event, { printerName, textContent }) => {
       });
 
       const safeText = (textContent || '')
+        .replace(/[\u20B9₹]/g, 'Rs.')
+        .replace(/\?+(?=\s*Rs\.|\s*\d)/gi, '')
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
@@ -59,16 +61,19 @@ ipcMain.handle('print-receipt', async (event, { printerName, textContent }) => {
   <meta charset="utf-8">
   <style>
     @page { margin: 0; size: 58mm auto; }
-    body {
+    html, body {
       font-family: 'Courier New', Courier, monospace;
-      font-size: 12px;
-      line-height: 1.25;
-      width: 58mm;
-      margin: 0;
-      padding: 4px;
+      font-size: 11px;
+      line-height: 1.2;
+      width: 50mm;
+      max-width: 50mm;
+      margin: 0 auto;
+      padding: 2px 0;
       white-space: pre-wrap;
-      word-break: break-all;
+      word-break: break-word;
+      overflow-wrap: break-word;
       color: #000;
+      box-sizing: border-box;
     }
   </style>
 </head>

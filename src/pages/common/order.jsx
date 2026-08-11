@@ -804,16 +804,18 @@ const Order = () => {
     const lineSeparatorSingle = '-'.repeat(32)
     const storeName = (billingSettings.storeName || 'MAGIXX SWEETS & CAFE').trim()
     const kotTime = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+    const formattedOrderType = String(activeOrderType || 'Dine-in').toUpperCase()
 
     const kotReceiptLines = [
       lineSeparatorDouble,
       centerText(storeName),
-      centerText('KITCHEN ORDER TICKET'),
+      centerText('*** KITCHEN ORDER TICKET ***'),
       lineSeparatorDouble,
       `Token : #${fmtToken(activeToken)}`.slice(0, 32),
-      `Type  : ${activeOrderType}`.slice(0, 32),
       `Time  : ${kotTime}`.slice(0, 32),
       currentToken?.customerName ? `Name  : ${currentToken.customerName}`.slice(0, 32) : '',
+      lineSeparatorSingle,
+      centerText(`*** TYPE: ${formattedOrderType} ***`).slice(0, 32),
       lineSeparatorSingle,
     ].filter(Boolean)
 
@@ -1067,30 +1069,44 @@ const Order = () => {
     const billTime = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
     const tempOrderId = `ORD-${Date.now().toString().slice(-6)}`
 
+    const formatReceiptCenter = (str, width = 32) => {
+      const s = String(str || '').trim().slice(0, width)
+      const pad = Math.floor((width - s.length) / 2)
+      return ' '.repeat(Math.max(0, pad)) + s
+    }
+
     const billReceiptText = [
       '================================',
-      `   ${billingSettings.storeName || 'MAGIXX SWEETS & CAFE'}`,
-      billingSettings.invoiceHeader || '',
-      billingSettings.gstin ? `GSTIN: ${billingSettings.gstin}` : '',
+      formatReceiptCenter(billingSettings.storeName || 'MAGIXX SWEETS & CAFE', 32),
+      billingSettings.invoiceHeader ? formatReceiptCenter(billingSettings.invoiceHeader, 32) : '',
+      billingSettings.gstin ? formatReceiptCenter(`GSTIN: ${billingSettings.gstin}`, 32) : '',
       '================================',
       `Order : ${tempOrderId}`,
       `Date  : ${billDate}  ${billTime}`,
+      `Type  : ${(activeOrderType || 'Dine-in').toUpperCase()}`,
       name ? `Name  : ${name}` : '',
       phone ? `Phone : ${phone}` : '',
       `Pay   : ${normalizedMethod}`,
       '--------------------------------',
+      'ITEM           QTY  RATE   TOTAL',
+      '--------------------------------',
       ...(cart || []).map((c) => {
-        const lineTotal = (Number(c.price) * Number(c.qty)).toFixed(2)
-        return `${String(c.qty).padEnd(3)} x ${c.name.slice(0, 16).padEnd(16)}  ${lineTotal}`
+        const itemQty = String(c.qty).padStart(3)
+        const itemRate = Number(c.price).toFixed(2).padStart(6)
+        const lineTotal = (Number(c.price) * Number(c.qty)).toFixed(2).padStart(6)
+        const itemName = c.name.slice(0, 14).padEnd(14)
+        return `${itemName} ${itemQty} ${itemRate} ${lineTotal}`
       }),
       '--------------------------------',
-      `Subtotal : ${billingSettings.currency || '₹'} ${Number(subtotal).toFixed(2)}`,
-      `CGST ${cgstRate.toFixed(2)}% : ${billingSettings.currency || '₹'} ${Number(cgstAmount).toFixed(2)}`,
-      `SGST ${sgstRate.toFixed(2)}% : ${billingSettings.currency || '₹'} ${Number(sgstAmount).toFixed(2)}`,
-      `TOTAL    : ${billingSettings.currency || '₹'} ${Number(total).toFixed(2)}`,
-      `(Incl. Tax: ${billingSettings.currency || '₹'} ${Number(taxAmount).toFixed(2)})`,
+      `SUBTOTAL     : Rs. ${Number(subtotal).toFixed(2)}`,
+      `CGST ${cgstRate.toFixed(2).padStart(4)}%  : Rs. ${Number(cgstAmount).toFixed(2)}`,
+      `SGST ${sgstRate.toFixed(2).padStart(4)}%  : Rs. ${Number(sgstAmount).toFixed(2)}`,
       '================================',
-      billingSettings.invoiceFooter || '',
+      `GRAND TOTAL  : Rs. ${Number(total).toFixed(2)}`,
+      '================================',
+      `(Incl. Tax   : Rs. ${Number(taxAmount).toFixed(2)})`,
+      '--------------------------------',
+      billingSettings.invoiceFooter ? formatReceiptCenter(billingSettings.invoiceFooter, 32) : '',
     ].filter(Boolean).join('\n')
 
     // Silently print customer bill receipt to Billing printer via Electron Native IPC
@@ -1812,30 +1828,33 @@ const Order = () => {
       {lastPrintedDoc && (
         <div id="printable-receipt" data-print-area="receipt-print-area" className="printable-receipt receipt-print-area hidden print:block text-black font-mono">
           {lastPrintedDoc.type === 'KOT' ? (
-            <div className="space-y-2 text-center text-xs w-[54mm] max-w-[54mm] mx-auto">
+            <div className="space-y-1.5 text-center text-xs w-[50mm] max-w-[50mm] mx-auto overflow-hidden text-black font-mono">
               <div className="border-b-2 border-black pb-1">
-                <h2 className="text-sm font-black uppercase tracking-tight">*** KITCHEN ORDER TICKET ***</h2>
-                <p className="text-[11px] font-bold">{billingSettings.storeName || 'MAGIXX SWEETS & CAFE'}</p>
+                <h2 className="text-xs font-black uppercase tracking-tight">*** KITCHEN ORDER TICKET ***</h2>
+                <p className="text-[10px] font-bold">{billingSettings.storeName || 'MAGIXX SWEETS & CAFE'}</p>
+              </div>
+              <div className="border-y-2 border-black py-1 my-1 text-center bg-black text-white">
+                <p className="text-[8px] font-bold uppercase tracking-wider">ORDER TYPE</p>
+                <p className="text-xs font-black uppercase tracking-widest">{String(lastPrintedDoc.orderType || 'Dine-in').toUpperCase()}</p>
               </div>
               <div className="flex justify-between text-[10px] font-bold border-b border-black pb-1 text-left">
                 <div>
                   <p>TOKEN #: <span className="text-xs font-black">#{String(lastPrintedDoc.tokenNumber).padStart(2, '0')}</span></p>
-                  <p>TYPE: {lastPrintedDoc.orderType}</p>
                 </div>
                 <div className="text-right">
                   <p>TIME: {lastPrintedDoc.time}</p>
                   <p>DATE: {new Date().toLocaleDateString('en-GB')}</p>
                 </div>
               </div>
-              <div className="text-left border-b border-black pb-2 pt-1">
-                <div className="grid grid-cols-12 font-bold text-[9px] uppercase border-b border-black pb-1">
+              <div className="text-left border-b border-black pb-2 pt-0.5">
+                <div className="grid grid-cols-12 font-black text-[9px] uppercase border-b border-black pb-1 mb-1">
                   <span className="col-span-8">ITEM NAME</span>
                   <span className="col-span-4 text-right">QTY</span>
                 </div>
                 {(lastPrintedDoc.items || []).map((item, idx) => (
                   <div key={idx} className="py-0.5 border-b border-gray-200">
                     <div className="grid grid-cols-12 text-[10px] font-bold">
-                      <span className="col-span-8 truncate">{item.name}</span>
+                      <span className="col-span-8 break-words pr-1">{item.name}</span>
                       <span className="col-span-4 text-right font-black">x{item.qty}</span>
                     </div>
                     {item.note && (
@@ -1846,23 +1865,23 @@ const Order = () => {
                   </div>
                 ))}
               </div>
-              <div className="pt-1 text-[9px] font-bold uppercase text-center">
+              <div className="pt-0.5 text-[9px] font-bold uppercase text-center">
                 <p>*** SENT TO KITCHEN ***</p>
               </div>
             </div>
           ) : (
-            <div className="space-y-2 text-center text-xs">
+            <div className="space-y-1.5 text-center text-xs w-[50mm] max-w-[50mm] mx-auto overflow-hidden text-black font-mono">
               <div className="border-b-2 border-black pb-1">
-                <h2 className="text-sm font-black uppercase">{billingSettings.storeName || 'MAGIXX SWEETS & CAFE'}</h2>
-                <p className="text-[10px]">{billingSettings.invoiceHeader || 'Main Road, Cafe Square, Odisha • Ph: 9000000000'}</p>
-                <p className="text-[10px]">GSTIN: {billingSettings.gstin || '21ABCDE1234F1Z5'}</p>
-                <p className="text-xs font-extrabold uppercase mt-1">TAX INVOICE / OFFICIAL RECEIPT</p>
+                <h2 className="text-xs font-black uppercase">{billingSettings.storeName || 'MAGIXX SWEETS & CAFE'}</h2>
+                <p className="text-[9px]">{billingSettings.invoiceHeader || 'Main Road, Cafe Square, Odisha'}</p>
+                <p className="text-[9px]">GSTIN: {billingSettings.gstin || '21ABCDE1234F1Z5'}</p>
+                <p className="text-[10px] font-extrabold uppercase mt-0.5">TAX INVOICE / RECEIPT</p>
               </div>
-              <div className="flex justify-between text-[10px] font-bold border-b border-black pb-1 text-left">
+              <div className="flex justify-between text-[9px] font-bold border-b border-black pb-1 text-left">
                 <div>
                   <p>TOKEN #: <span className="text-xs font-black">#{String(lastPrintedDoc.tokenNumber).padStart(2, '0')}</span></p>
                   <p>ORDER: {lastPrintedDoc.orderId || 'ORD-BILL'}</p>
-                  <p>CUST: {lastPrintedDoc.customerName || 'Walk-in Guest'}</p>
+                  <p>CUST: {lastPrintedDoc.customerName || 'Walk-in'}</p>
                 </div>
                 <div className="text-right">
                   <p>DATE: {lastPrintedDoc.date || new Date().toLocaleDateString('en-GB')}</p>
@@ -1870,39 +1889,45 @@ const Order = () => {
                   <p>MODE: {lastPrintedDoc.paymentMethod}</p>
                 </div>
               </div>
+
+              {/* 4 Distinct Columns fitting 58mm printable width: ITEM NAME (col-span-5), QTY (col-span-2), RATE (col-span-2), TOTAL (col-span-3) */}
               <div className="text-left border-b border-black pb-1">
-                <div className="grid grid-cols-12 font-bold text-[9px] uppercase border-b border-black pb-1">
-                  <span className="col-span-6">ITEM</span>
+                <div className="grid grid-cols-12 font-black text-[9px] uppercase border-b border-black pb-1 mb-1">
+                  <span className="col-span-5 text-left">ITEM</span>
                   <span className="col-span-2 text-center">QTY</span>
-                  <span className="col-span-4 text-right">AMT (₹)</span>
+                  <span className="col-span-2 text-right">RATE</span>
+                  <span className="col-span-3 text-right">TOTAL</span>
                 </div>
                 {(lastPrintedDoc.items || []).map((item, idx) => (
-                  <div key={idx} className="grid grid-cols-12 text-[10px] font-bold py-0.5">
-                    <span className="col-span-6 truncate">{item.name}</span>
+                  <div key={idx} className="grid grid-cols-12 text-[10px] font-bold py-0.5 border-b border-gray-100">
+                    <span className="col-span-5 text-left break-words pr-0.5 leading-tight">{item.name}</span>
                     <span className="col-span-2 text-center">{item.qty}</span>
-                    <span className="col-span-4 text-right">{(item.price * item.qty).toFixed(2)}</span>
+                    <span className="col-span-2 text-right">{Number(item.price || 0).toFixed(2)}</span>
+                    <span className="col-span-3 text-right">{(Number(item.price || 0) * Number(item.qty || 1)).toFixed(2)}</span>
                   </div>
                 ))}
               </div>
-              <div className="space-y-0.5 text-[10px] font-bold border-b border-black pb-1 text-right">
-                <div className="flex justify-between">
+
+              {/* Subtotal, CGST, SGST, Grand Total with enlarged, bold typography & no question marks */}
+              <div className="space-y-0.5 border-b border-black pb-1 text-right">
+                <div className="flex justify-between text-xs font-extrabold">
                   <span>SUBTOTAL:</span>
-                  <span>₹{lastPrintedDoc.subtotal?.toFixed(2)}</span>
+                  <span>Rs.{lastPrintedDoc.subtotal?.toFixed(2)}</span>
                 </div>
-                <div className="flex justify-between">
+                <div className="flex justify-between text-xs font-extrabold">
                   <span>CGST ({(parseFloat(billingSettings.taxRate || '5.00') / 2).toFixed(2)}%):</span>
-                  <span>+ ₹{((lastPrintedDoc.taxAmount || 0) / 2).toFixed(2)}</span>
+                  <span>+ Rs.{((lastPrintedDoc.taxAmount || 0) / 2).toFixed(2)}</span>
                 </div>
-                <div className="flex justify-between">
+                <div className="flex justify-between text-xs font-extrabold">
                   <span>SGST ({(parseFloat(billingSettings.taxRate || '5.00') / 2).toFixed(2)}%):</span>
-                  <span>+ ₹{((lastPrintedDoc.taxAmount || 0) / 2).toFixed(2)}</span>
+                  <span>+ Rs.{((lastPrintedDoc.taxAmount || 0) / 2).toFixed(2)}</span>
                 </div>
-                <div className="flex justify-between text-xs font-black pt-1 border-t border-black">
-                  <span>GRAND TOTAL:</span>
-                  <span>₹{lastPrintedDoc.total?.toFixed(2)}</span>
+                <div className="flex justify-between items-center text-xs font-black uppercase border-y-2 border-black py-1 my-1 bg-black/5">
+                  <span className="tracking-wide">GRAND TOTAL:</span>
+                  <span className="text-sm font-black">Rs.{lastPrintedDoc.total?.toFixed(2)}</span>
                 </div>
               </div>
-              <div className="pt-1 text-[9px] font-bold uppercase text-center">
+              <div className="pt-0.5 text-[9px] font-bold uppercase text-center">
                 <p>{billingSettings.invoiceFooter || billingSettings.footerNotes || 'THANK YOU FOR VISITING MAGIXX! HAVE A SWEET DAY • VISIT AGAIN'}</p>
               </div>
             </div>

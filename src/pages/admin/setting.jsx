@@ -1223,7 +1223,7 @@ const Settings = () => {
             <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm space-y-5">
               <div className="border-b border-zinc-100 pb-3">
                 <h2 className="text-base font-extrabold text-zinc-900">Hardware &amp; Printers</h2>
-                <p className="mt-0.5 text-xs text-zinc-500">Select your OS-paired printers directly from the dropdown. Pair printers first via Windows Settings → Bluetooth &amp; devices or Printers &amp; scanners.</p>
+                <p className="mt-0.5 text-xs text-zinc-500">Select your installed system or USB printers directly from the dropdown list.</p>
               </div>
 
               {/* Status Banner */}
@@ -1237,7 +1237,7 @@ const Settings = () => {
                 }`} />
                 {window.electronAPI && typeof window.electronAPI.printReceipt === 'function'
                   ? `Electron Desktop App — OS system printer list loaded (${safeSystemPrinters.length} printer${safeSystemPrinters.length !== 1 ? 's' : ''} found). Select below.`
-                  : 'Running in browser — open the MAGIXX desktop app to access OS-paired printers directly. You can still type a printer name manually below.'}
+                  : 'Running in browser — open the MAGIXX desktop app to access installed system/USB printers directly. You can still type a printer name manually below.'}
               </div>
 
               {/* Refresh Printers Button */}
@@ -1273,7 +1273,7 @@ const Settings = () => {
                       <p className="text-[10px] text-zinc-500">Receives KOT slip when &quot;KOT &amp; Print&quot; is clicked in POS</p>
                     </div>
                   </div>
-                  {(kotPairStatus === 'paired' || Boolean(safePrinters.kotPrinterName || safePrinters.kotPrinterAddress)) && (
+                  {(kotPairStatus === 'paired' || Boolean(safePrinters.kotPrinterName)) && (
                     <span className="flex items-center gap-1 rounded-full bg-green-100 border border-green-200 px-2.5 py-1 text-[10px] font-extrabold text-green-700">
                       <span className="h-1.5 w-1.5 rounded-full bg-green-500" />Configured
                     </span>
@@ -1283,7 +1283,7 @@ const Settings = () => {
                 {/* OS System Printer Dropdown — always shown, populated when Electron lists are available */}
                 <div>
                   <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-500">
-                    {safeSystemPrinters.length > 0 ? 'Select OS-Paired System Printer' : 'OS Printer List (not available in browser)'}
+                    {safeSystemPrinters.length > 0 ? 'Select Installed System / USB Printer' : 'OS Printer List (not available in browser)'}
                   </label>
                   {safeSystemPrinters.length > 0 ? (
                     <select
@@ -1301,33 +1301,21 @@ const Settings = () => {
                     </select>
                   ) : (
                     <div className="rounded-lg border border-dashed border-zinc-200 bg-white px-3 py-2.5 text-[11px] text-zinc-400">
-                      Pair your printer in <strong className="text-zinc-600">Windows Settings → Bluetooth &amp; devices</strong> first, then click <strong className="text-zinc-600">Refresh Printer List</strong> above.
+                      Connect your USB/thermal printer in <strong className="text-zinc-600">Windows Settings → Printers &amp; scanners</strong> first, then click <strong className="text-zinc-600">Refresh Printer List</strong> above.
                     </div>
                   )}
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-500">Device / Printer Name (manual override)</label>
-                    <input
-                      type="text"
-                      id="kot-printer-name-input"
-                      value={safePrinters.kotPrinterName}
-                      onChange={(e) => setPrinters((p) => ({ ...(p || DEFAULT_PRINTERS), kotPrinterName: e.target.value }))}
-                      placeholder="e.g. POS-58 or PT-210 Kitchen"
-                      className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 outline-none focus:border-yellow-400"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-500">GATT Service UUID (Web BT)</label>
-                    <input
-                      type="text"
-                      value={safePrinters.kotPrinterServiceUUID}
-                      onChange={(e) => setPrinters((p) => ({ ...(p || DEFAULT_PRINTERS), kotPrinterServiceUUID: e.target.value }))}
-                      placeholder="000018f0-0000-1000-8000-00805f9b34fb"
-                      className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-mono text-zinc-700 outline-none focus:border-yellow-400"
-                    />
-                  </div>
+                <div>
+                  <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-500">Device / Printer Name (manual override)</label>
+                  <input
+                    type="text"
+                    id="kot-printer-name-input"
+                    value={safePrinters.kotPrinterName}
+                    onChange={(e) => setPrinters((p) => ({ ...(p || DEFAULT_PRINTERS), kotPrinterName: e.target.value }))}
+                    placeholder="e.g. POS-58 or PT-210 Kitchen"
+                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 outline-none focus:border-yellow-400"
+                  />
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 pt-1">
@@ -1339,7 +1327,7 @@ const Settings = () => {
                     <Icon d={IC.printer} size={13} />
                     Test Print Receipt
                   </button>
-                  {(safePrinters.kotPrinterName || safePrinters.kotPrinterAddress) && (
+                  {safePrinters.kotPrinterName && (
                     <button
                       type="button"
                       onClick={handleRemoveKotPrinter}
@@ -1364,7 +1352,7 @@ const Settings = () => {
                       <p className="text-[10px] text-zinc-500">Receives final receipt when &quot;Checkout &amp; Pay&quot; completes in POS</p>
                     </div>
                   </div>
-                  {(billPairStatus === 'paired' || Boolean(safePrinters.billingPrinterName || safePrinters.billingPrinterAddress)) && (
+                  {(billPairStatus === 'paired' || Boolean(safePrinters.billingPrinterName)) && (
                     <span className="flex items-center gap-1 rounded-full bg-green-100 border border-green-200 px-2.5 py-1 text-[10px] font-extrabold text-green-700">
                       <span className="h-1.5 w-1.5 rounded-full bg-green-500" />Configured
                     </span>
@@ -1374,7 +1362,7 @@ const Settings = () => {
                 {/* OS System Printer Dropdown */}
                 <div>
                   <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-500">
-                    {safeSystemPrinters.length > 0 ? 'Select OS-Paired System Printer' : 'OS Printer List (not available in browser)'}
+                    {safeSystemPrinters.length > 0 ? 'Select Installed System / USB Printer' : 'OS Printer List (not available in browser)'}
                   </label>
                   {safeSystemPrinters.length > 0 ? (
                     <select
@@ -1392,33 +1380,21 @@ const Settings = () => {
                     </select>
                   ) : (
                     <div className="rounded-lg border border-dashed border-zinc-200 bg-white px-3 py-2.5 text-[11px] text-zinc-400">
-                      Pair your printer in <strong className="text-zinc-600">Windows Settings → Bluetooth &amp; devices</strong> first, then click <strong className="text-zinc-600">Refresh Printer List</strong> above.
+                      Connect your USB/thermal printer in <strong className="text-zinc-600">Windows Settings → Printers &amp; scanners</strong> first, then click <strong className="text-zinc-600">Refresh Printer List</strong> above.
                     </div>
                   )}
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-500">Device / Printer Name (manual override)</label>
-                    <input
-                      type="text"
-                      id="billing-printer-name-input"
-                      value={safePrinters.billingPrinterName}
-                      onChange={(e) => setPrinters((p) => ({ ...(p || DEFAULT_PRINTERS), billingPrinterName: e.target.value }))}
-                      placeholder="e.g. POS-58 or PT-210 Counter"
-                      className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 outline-none focus:border-yellow-400"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-500">GATT Service UUID (Web BT)</label>
-                    <input
-                      type="text"
-                      value={safePrinters.billingPrinterServiceUUID}
-                      onChange={(e) => setPrinters((p) => ({ ...(p || DEFAULT_PRINTERS), billingPrinterServiceUUID: e.target.value }))}
-                      placeholder="000018f0-0000-1000-8000-00805f9b34fb"
-                      className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-mono text-zinc-700 outline-none focus:border-yellow-400"
-                    />
-                  </div>
+                <div>
+                  <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-500">Device / Printer Name (manual override)</label>
+                  <input
+                    type="text"
+                    id="billing-printer-name-input"
+                    value={safePrinters.billingPrinterName}
+                    onChange={(e) => setPrinters((p) => ({ ...(p || DEFAULT_PRINTERS), billingPrinterName: e.target.value }))}
+                    placeholder="e.g. POS-58 or PT-210 Counter"
+                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 outline-none focus:border-yellow-400"
+                  />
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 pt-1">

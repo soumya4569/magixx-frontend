@@ -37,6 +37,17 @@ ipcMain.handle('get-system-printers', async (event) => {
 
 // IPC Listener to handle silent native thermal receipt printing via Electron webContents
 ipcMain.handle('print-receipt', async (event, { printerName, textContent }) => {
+  // Strict Guard Clause: Abort immediately if no valid printer device name is selected
+  if (!printerName || typeof printerName !== 'string' || printerName.trim() === '') {
+    console.warn('[Electron Main] Silent print aborted: No printer device name specified in settings.');
+    return {
+      success: false,
+      error: 'No printer selected. Please select a target printer in POS Settings first.',
+    };
+  }
+
+  const targetPrinterName = printerName.trim();
+
   return new Promise((resolve) => {
     let printWindow = null;
     try {
@@ -87,21 +98,18 @@ ipcMain.handle('print-receipt', async (event, { printerName, textContent }) => {
           silent: true,
           printBackground: true,
           margins: { marginType: 'none' },
+          deviceName: targetPrinterName,
         };
-
-        if (printerName) {
-          options.deviceName = printerName;
-        }
 
         printWindow.webContents.print(options, (success, failureReason) => {
           if (printWindow && !printWindow.isDestroyed()) {
             printWindow.close();
           }
           if (success) {
-            console.log(`[Electron Main] Printed receipt successfully on "${printerName || 'default'}"`);
+            console.log(`[Electron Main] Printed receipt successfully on "${targetPrinterName}"`);
             resolve({ success: true });
           } else {
-            console.error(`[Electron Main] Print failed on "${printerName}":`, failureReason);
+            console.error(`[Electron Main] Print failed on "${targetPrinterName}":`, failureReason);
             resolve({ success: false, error: failureReason });
           }
         });

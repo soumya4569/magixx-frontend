@@ -1,7 +1,7 @@
 /**
- * bluetoothPrinter.js
- * Native Electron Printer helper utility.
- * Replaces Web Bluetooth with silent native printing via Electron IPC (window.electronAPI.printReceipt).
+ * bluetoothPrinter.js / nativePrinter.js
+ * Native Electron System/USB Thermal Printer helper utility.
+ * Sends silent native print jobs via Electron IPC (window.electronAPI.printReceipt).
  */
 
 import api from '../services/api';
@@ -30,8 +30,6 @@ export const logPrinterDeviceEvent = async (printerType, deviceName, deviceAddre
 export const getPrinterConfig = (printerType = 'kot') => {
   let config = {
     name: '',
-    address: '',
-    serviceUUID: '000018f0-0000-1000-8000-00805f9b34fb',
   };
 
   try {
@@ -40,12 +38,8 @@ export const getPrinterConfig = (printerType = 'kot') => {
       const parsed = JSON.parse(saved);
       if (printerType === 'kot') {
         config.name = parsed.kotPrinterName || '';
-        config.address = parsed.kotPrinterAddress || '';
-        config.serviceUUID = parsed.kotPrinterServiceUUID || config.serviceUUID;
       } else {
         config.name = parsed.billingPrinterName || '';
-        config.address = parsed.billingPrinterAddress || '';
-        config.serviceUUID = parsed.billingPrinterServiceUUID || config.serviceUUID;
       }
     }
   } catch (err) {
@@ -60,18 +54,19 @@ export const getPrinterConfig = (printerType = 'kot') => {
  */
 export const checkPrinterStreamStatus = (printerType) => {
   const config = getPrinterConfig(printerType);
-  const isConfigured = Boolean(config.name);
+  const isConfigured = Boolean(config.name && config.name.trim());
 
   return {
     isConnected: isConfigured,
     deviceName: config.name || '',
-    deviceAddress: config.address || '',
+    deviceAddress: 'SYSTEM_QUEUE',
     lastUsed: new Date(),
   };
 };
 
 /**
- * Sends receipt text to the selected printer via Electron Native IPC.
+ * Sends receipt text to the selected system printer via Electron Native IPC.
+ * Strictly aborts if no printer device name is selected in settings.
  *
  * @param {'kot' | 'billing'} printerType Destination printer ('kot' or 'billing')
  * @param {string} receiptText Plain text receipt content
@@ -82,23 +77,29 @@ export const sendToNativePrinter = async (printerType, receiptText, toast = cons
   const label = printerType === 'kot' ? 'Kitchen KOT' : 'Counter Billing';
   const config = getPrinterConfig(printerType);
 
+  // Strict Pre-flight Guard: Abort if no printer device is selected in settings
+  if (!config.name || !config.name.trim()) {
+    toast(`No printer selected for ${label}. Please select a printer in POS Settings first.`, 'error');
+    return false;
+  }
+
   if (!window.electronAPI || typeof window.electronAPI.printReceipt !== 'function') {
     toast(`Native printing is only available when running inside the Electron POS app.`, 'warning');
     return false;
   }
 
   try {
-    console.log(`[PrinterService] Submitting silent print job for ${label} to printer "${config.name || 'Default Printer'}"`);
+    console.log(`[PrinterService] Submitting silent print job for ${label} to printer "${config.name}"`);
     const result = await window.electronAPI.printReceipt({
-      printerName: config.name || '',
+      printerName: config.name.trim(),
       textContent: receiptText,
     });
 
     if (result && result.success) {
       logPrinterDeviceEvent(
         printerType,
-        config.name || 'Default System Printer',
-        'NATIVE_IPC',
+        config.name,
+        'SYSTEM_QUEUE',
         'PRINT_SUCCESS',
         'Receipt printed successfully via Electron Native IPC'
       );
@@ -109,8 +110,8 @@ export const sendToNativePrinter = async (printerType, receiptText, toast = cons
       console.error(`[PrinterService] Native print failed for ${label}:`, errorMsg);
       logPrinterDeviceEvent(
         printerType,
-        config.name || 'Default System Printer',
-        'NATIVE_IPC',
+        config.name,
+        'SYSTEM_QUEUE',
         'PRINT_FAILED',
         errorMsg
       );
@@ -125,7 +126,7 @@ export const sendToNativePrinter = async (printerType, receiptText, toast = cons
 };
 
 /**
- * Alias export for backward compatibility across existing React components.
+ * Alias exports for backward compatibility across existing React components.
  */
 export const sendToBluetoothPrinter = sendToNativePrinter;
 
@@ -133,3 +134,4 @@ export const sendToBluetoothPrinter = sendToNativePrinter;
  * Legacy disconnect stub function.
  */
 export const disconnectPrinterStream = () => {};
+

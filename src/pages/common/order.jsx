@@ -857,7 +857,7 @@ const Order = () => {
 
     const kotReceiptText = kotReceiptLines.join('\n')
 
-    // Attempt Bluetooth print FIRST targeting saved Kitchen printer — only commit state if print succeeds
+    // Attempt native silent print targeting saved Kitchen printer — only commit state if print succeeds
     const printed = await sendToBluetoothPrinter('kot', kotReceiptText, toast)
     if (!printed) return
 

@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useMemo } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import api from '../../services/api'
-import { sendToBluetoothPrinter } from '../../utils/bluetoothPrinter'
+import { sendToBluetoothPrinter, getPrinterConfig } from '../../utils/bluetoothPrinter'
 
 const BASE_MERCHANT_VPA = 'paytmqr659xjb@ptys'
 
@@ -1198,11 +1198,7 @@ const Order = () => {
       ...wrapAndCenterText(footerText, 32),
     ].filter(Boolean).join('\n')
 
-    // Silently print customer bill receipt to Billing printer via Electron Native IPC
-    await sendToBluetoothPrinter('billing', billReceiptText, toast)
-
     try {
-
       let customerId = null
       if (!isAggregatorOrder && phone && phone.length >= 10) {
         try {
@@ -1241,17 +1237,6 @@ const Order = () => {
       const orderRes = await api.post('/orders', orderPayload)
       const orderData = orderRes.data
 
-      // Skip backend bill print status update since final customer bill Bluetooth print is disabled
-      /*
-      if (orderData && orderData._id) {
-        try {
-          await api.patch(`/orders/${orderData._id}/print`, { type: 'bill' })
-        } catch (printErr) {
-          console.warn('Backend bill print status update warning:', printErr.message)
-        }
-      }
-      */
-
       const billDoc = {
         type: 'BILL',
         orderId: orderData._id ? `ORD-${String(orderData._id).slice(-6).toUpperCase()}` : tempOrderId,
@@ -1273,6 +1258,22 @@ const Order = () => {
       window.dispatchEvent(new Event('pos:data-updated'))
 
       toast(`Payment (${normalizedMethod}) Successful`, 'success')
+
+      // Explicitly trigger thermal receipt printing with full order details wrapped in try-catch
+      try {
+        const printerConfig = getPrinterConfig('billing')
+        if (!printerConfig || !printerConfig.name || !printerConfig.name.trim()) {
+          toast('Failed to print receipt: Please check printer settings.', 'error')
+        } else {
+          const printSuccess = await sendToBluetoothPrinter('billing', billReceiptText, toast)
+          if (!printSuccess) {
+            // Failure toast is dispatched inside sendToBluetoothPrinter
+          }
+        }
+      } catch (printErr) {
+        console.error('[ConfirmPayment] Thermal receipt print trigger exception:', printErr)
+        toast('Failed to print receipt: Please check printer settings.', 'error')
+      }
     } catch (err) {
       console.error('Order submission error:', err)
       const errMsg = err.response?.data?.message || err.message || 'Error processing order backend submission'

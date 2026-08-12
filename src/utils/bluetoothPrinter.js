@@ -79,12 +79,18 @@ export const sendToNativePrinter = async (printerType, receiptText, toast = cons
 
   // Strict Pre-flight Guard: Abort if no printer device is selected in settings
   if (!config.name || !config.name.trim()) {
-    toast(`No printer selected for ${label}. Please select a printer in POS Settings first.`, 'error');
+    console.warn(`[PrinterService] Missing printer configuration for ${label}.`);
+    if (typeof toast === 'function') {
+      toast('Failed to print receipt: Please check printer settings.', 'error');
+    }
     return false;
   }
 
   if (!window.electronAPI || typeof window.electronAPI.printReceipt !== 'function') {
-    toast(`Native printing is only available when running inside the Electron POS app.`, 'warning');
+    console.warn(`[PrinterService] window.electronAPI.printReceipt unavailable for ${label}.`);
+    if (typeof toast === 'function') {
+      toast('Failed to print receipt: Please check printer settings.', 'error');
+    }
     return false;
   }
 
@@ -103,7 +109,9 @@ export const sendToNativePrinter = async (printerType, receiptText, toast = cons
         'PRINT_SUCCESS',
         'Receipt printed successfully via Electron Native IPC'
       );
-      toast(`${label} printed successfully!`, 'success');
+      if (typeof toast === 'function') {
+        toast(`${label} printed successfully!`, 'success');
+      }
       return true;
     } else {
       const errorMsg = result?.error || 'Native print execution failed';
@@ -115,12 +123,16 @@ export const sendToNativePrinter = async (printerType, receiptText, toast = cons
         'PRINT_FAILED',
         errorMsg
       );
-      toast(`Print error on ${label}: ${errorMsg}`, 'error');
+      if (typeof toast === 'function') {
+        toast('Failed to print receipt: Please check printer settings.', 'error');
+      }
       return false;
     }
   } catch (err) {
     console.error(`[PrinterService] Exception during print call for ${label}:`, err);
-    toast(`Print error on ${label}: ${err.message}`, 'error');
+    if (typeof toast === 'function') {
+      toast('Failed to print receipt: Please check printer settings.', 'error');
+    }
     return false;
   }
 };

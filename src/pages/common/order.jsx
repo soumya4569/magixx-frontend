@@ -1106,34 +1106,54 @@ const Order = () => {
   }
 
   /**
-   * printFinalBill — fire-and-forget async helper.
+   * printFinalBill — fire-and-forget USB thermal billing receipt helper.
    * Called via setTimeout after the payment modal has already been closed,
    * so it never blocks the UI or causes modal lock-up.
+   *
+   * Sends the bill text directly to the Electron IPC 'print-receipt' handler
+   * via window.electronAPI.printReceipt — no bluetooth abstraction layer.
    *
    * @param {string} receiptText  Pre-built plain-text receipt content
    * @param {Function} toastFn    Toast callback (type: 'success' | 'warning' | 'error')
    */
   const printFinalBill = async (receiptText, toastFn) => {
+    // ── Guard 1: Printer configured? ────────────────────────────────────────
+    const printerConfig = getPrinterConfig('billing')
+    if (!printerConfig?.name?.trim()) {
+      console.warn('[printFinalBill] No USB billing printer name configured in Settings. Aborting print.')
+      toastFn('USB Printer Error: No billing printer selected. Go to Settings to configure.', 'error')
+      return
+    }
+
+    const printerName = printerConfig.name.trim()
+
+    // ── Guard 2: Electron IPC bridge available? ──────────────────────────────
+    if (!window.electronAPI || typeof window.electronAPI.printReceipt !== 'function') {
+      console.warn('[printFinalBill] window.electronAPI.printReceipt is not available (non-Electron context).')
+      toastFn('USB Printer Error: Print bridge unavailable. Restart the POS app.', 'error')
+      return
+    }
+
+    // ── Direct IPC print call ────────────────────────────────────────────────
     try {
-      const printerConfig = getPrinterConfig('billing')
-      if (!printerConfig?.name?.trim()) {
-        console.warn('[printFinalBill] No billing printer configured in settings. Skipping print.')
-        toastFn('Receipt not printed: No billing printer configured in Settings.', 'warning')
-        return
-      }
+      console.log(`[printFinalBill] Invoking IPC print-receipt on USB printer: "${printerName}"`)
+      const result = await window.electronAPI.printReceipt({
+        printerName,
+        textContent: receiptText,
+      })
 
-      console.log(`[printFinalBill] Sending final bill to billing printer: "${printerConfig.name}"`)
-      const ok = await sendToBluetoothPrinter('billing', receiptText, toastFn)
-
-      if (!ok) {
-        // sendToBluetoothPrinter already emits its own error toast internally;
-        // log additionally here for traceability in the main process console.
-        console.error('[printFinalBill] sendToBluetoothPrinter returned false — check IPC logs above.')
+      if (result?.success) {
+        console.log(`[printFinalBill] ✓ Receipt printed successfully on "${printerName}".`)
+        toastFn('Receipt printed successfully!', 'success')
+      } else {
+        const reason = result?.error || 'Unknown USB print failure'
+        console.error(`[printFinalBill] ✗ USB print failed on "${printerName}": ${reason}`)
+        toastFn(`USB Printer Error: ${reason}. Check connection or Settings.`, 'error')
       }
     } catch (printErr) {
-      console.error('[printFinalBill] Uncaught exception during final bill print:', printErr)
+      console.error('[printFinalBill] ✗ Exception during USB IPC print call:', printErr)
       toastFn(
-        `Print error: ${printErr?.message || 'Unknown printer error'}. Check USB/printer connection and try manually.`,
+        `USB Printer Error: ${printErr?.message || 'Check connection or Settings'}.`,
         'error'
       )
     }

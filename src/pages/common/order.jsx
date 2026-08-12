@@ -65,6 +65,38 @@ const ICON_SORT_ASC = 'M3 6h18M6 12h12M9 18h6'
 const ICON_SORT_DSC = 'M3 18h18M6 12h12M9 6h6'
 const ICON_DRAFT    = 'M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z M17 21v-8H7v8 M7 3v5h8'
 
+/* 58mm Thermal Print Text Helpers */
+const centerText = (str, width = 32) => {
+  const s = String(str || '').trim()
+  if (s.length >= width) return s.slice(0, width)
+  const pad = Math.floor((width - s.length) / 2)
+  return ' '.repeat(Math.max(0, pad)) + s
+}
+
+const wrapAndCenterText = (str, width = 32) => {
+  if (!str || !String(str).trim()) return []
+  const words = String(str).trim().split(/\s+/)
+  const rawLines = []
+  let currentLine = ''
+
+  words.forEach((word) => {
+    if ((currentLine + (currentLine ? ' ' : '') + word).length <= width) {
+      currentLine += (currentLine ? ' ' : '') + word
+    } else {
+      if (currentLine) rawLines.push(currentLine)
+      let remaining = word
+      while (remaining.length > width) {
+        rawLines.push(remaining.slice(0, width))
+        remaining = remaining.slice(width)
+      }
+      currentLine = remaining
+    }
+  })
+  if (currentLine) rawLines.push(currentLine)
+
+  return rawLines.map((line) => centerText(line, width))
+}
+
 /* Toast notification popup component */
 const Toast = ({ toasts }) => (
   <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none no-print print:hidden Toastify__toast-container toast-container">
@@ -808,38 +840,6 @@ const Order = () => {
       note: i.note || '',
     }))
 
-    // Helper functions for 32-character max width 58mm thermal print formatting
-    const centerText = (str, width = 32) => {
-      const s = String(str || '').trim()
-      if (s.length >= width) return s.slice(0, width)
-      const pad = Math.floor((width - s.length) / 2)
-      return ' '.repeat(Math.max(0, pad)) + s
-    }
-
-    const wrapAndCenterText = (str, width = 32) => {
-      if (!str || !String(str).trim()) return []
-      const words = String(str).trim().split(/\s+/)
-      const rawLines = []
-      let currentLine = ''
-
-      words.forEach((word) => {
-        if ((currentLine + (currentLine ? ' ' : '') + word).length <= width) {
-          currentLine += (currentLine ? ' ' : '') + word
-        } else {
-          if (currentLine) rawLines.push(currentLine)
-          let remaining = word
-          while (remaining.length > width) {
-            rawLines.push(remaining.slice(0, width))
-            remaining = remaining.slice(width)
-          }
-          currentLine = remaining
-        }
-      })
-      if (currentLine) rawLines.push(currentLine)
-
-      return rawLines.map((line) => centerText(line, width))
-    }
-
     const isRegisteredCustomer = (cName) => {
       if (!cName || typeof cName !== 'string') return false
       const trimmed = cName.trim()
@@ -1240,6 +1240,11 @@ const Order = () => {
       })
       return resultLines
     }
+
+    const now = new Date()
+    const billDate = now.toLocaleDateString('en-IN')
+    const billTime = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })
+    const tempOrderId = `ORD-${Date.now().toString().slice(-6)}`
 
     const billReceiptText = [
       '================================',

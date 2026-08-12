@@ -1110,32 +1110,31 @@ const Order = () => {
    * Called via setTimeout after the payment modal has already been closed,
    * so it never blocks the UI or causes modal lock-up.
    *
-   * Sends the bill text directly to the Electron IPC 'print-receipt' handler
-   * via window.electronAPI.printReceipt — no bluetooth abstraction layer.
+   * Sends the 32-character fixed width bill text directly to Electron IPC 'print-receipt'.
    *
    * @param {string} receiptText  Pre-built plain-text receipt content
    * @param {Function} toastFn    Toast callback (type: 'success' | 'warning' | 'error')
    */
   const printFinalBill = async (receiptText, toastFn) => {
-    // ── Guard 1: Printer configured? ────────────────────────────────────────
-    const printerConfig = getPrinterConfig('billing')
-    if (!printerConfig?.name?.trim()) {
-      console.warn('[printFinalBill] No USB billing printer name configured in Settings. Aborting print.')
-      toastFn('USB Printer Error: No billing printer selected. Go to Settings to configure.', 'error')
-      return
-    }
-
-    const printerName = printerConfig.name.trim()
-
-    // ── Guard 2: Electron IPC bridge available? ──────────────────────────────
-    if (!window.electronAPI || typeof window.electronAPI.printReceipt !== 'function') {
-      console.warn('[printFinalBill] window.electronAPI.printReceipt is not available (non-Electron context).')
-      toastFn('USB Printer Error: Print bridge unavailable. Restart the POS app.', 'error')
-      return
-    }
-
-    // ── Direct IPC print call ────────────────────────────────────────────────
     try {
+      // ── Guard 1: Printer configured? ────────────────────────────────────────
+      const printerConfig = getPrinterConfig('billing')
+      if (!printerConfig?.name?.trim()) {
+        console.warn('[printFinalBill] No USB billing printer name configured in Settings. Aborting print.')
+        toastFn('Failed to print receipt: Please check printer settings.', 'error')
+        return
+      }
+
+      const printerName = printerConfig.name.trim()
+
+      // ── Guard 2: Electron IPC bridge available? ──────────────────────────────
+      if (!window.electronAPI || typeof window.electronAPI.printReceipt !== 'function') {
+        console.warn('[printFinalBill] window.electronAPI.printReceipt is not available (non-Electron context).')
+        toastFn('Failed to print receipt: Please check printer settings.', 'error')
+        return
+      }
+
+      // ── Direct IPC print call ────────────────────────────────────────────────
       console.log(`[printFinalBill] Invoking IPC print-receipt on USB printer: "${printerName}"`)
       const result = await window.electronAPI.printReceipt({
         printerName,
@@ -1148,14 +1147,11 @@ const Order = () => {
       } else {
         const reason = result?.error || 'Unknown USB print failure'
         console.error(`[printFinalBill] ✗ USB print failed on "${printerName}": ${reason}`)
-        toastFn(`USB Printer Error: ${reason}. Check connection or Settings.`, 'error')
+        toastFn('Failed to print receipt: Please check printer settings.', 'error')
       }
     } catch (printErr) {
       console.error('[printFinalBill] ✗ Exception during USB IPC print call:', printErr)
-      toastFn(
-        `USB Printer Error: ${printErr?.message || 'Check connection or Settings'}.`,
-        'error'
-      )
+      toastFn('Failed to print receipt: Please check printer settings.', 'error')
     }
   }
 
@@ -1190,7 +1186,7 @@ const Order = () => {
       return
     }
 
-    // Build the bill receipt text before attempting print
+    // ── 58mm Thermal Print Layout Helpers (Strict 32-Character Width) ────────
     const isRegisteredCustomerName = (cName) => {
       if (!cName || typeof cName !== 'string') return false
       const trimmed = cName.trim()
@@ -1198,31 +1194,43 @@ const Order = () => {
       return !/^(walk-?in|walk-?in guest|guest|unregistered|default)$/i.test(trimmed)
     }
 
-    const storeName = billingSettings.storeName || 'MAGIXX SWEETS & CAFE'
-    const invoiceHeader = billingSettings.invoiceHeader || 'Opposite Kalyan Mandap, Near Joda Bus Stand, Odisha • Ph: 7001322855'
-    const gstinText = billingSettings.gstin ? `GSTIN: ${billingSettings.gstin}` : ''
-    const footerText = billingSettings.invoiceFooter || billingSettings.footerNotes || 'THANK YOU FOR VISITING MAGIXX! HAVE A SWEET DAY • VISIT AGAIN'
+    const storeName = billingSettings.storeName || 'MAGIXX Sweets & Cafe'
+    const gstinText = billingSettings.gstin || '21ATDPK9131G1Z1'
 
-    const formatBillItemRows = (items, width = 32) => {
+    const headerLines = [
+      ...wrapAndCenterText(storeName, 32),
+      ...wrapAndCenterText('Opposite Kalyan Mandap', 32),
+      ...wrapAndCenterText('Near Joda Bus Stand, Odisha', 32),
+      ...wrapAndCenterText('Ph: 7001322855', 32),
+      ...wrapAndCenterText(`GSTIN: ${gstinText}`, 32),
+    ]
+
+    const footerLines = [
+      ...wrapAndCenterText('THANK YOU FOR VISITING MAGIXX!', 32),
+      ...wrapAndCenterText('HAVE A SWEET DAY • VISIT AGAIN', 32),
+    ]
+
+    // Grid row formatter: ITEM (12 chars left), QTY (5 right), RATE (7 right), AMOUNT (8 right) = 32
+    const formatBillItemRows = (items) => {
       const resultLines = []
       items.forEach((c) => {
-        const itemQty = String(c.qty).padStart(3)
-        const itemRate = Number(c.price).toFixed(2).padStart(6)
-        const lineTotal = (Number(c.price) * Number(c.qty)).toFixed(2).padStart(6)
+        const qtyStr = String(c.qty).padStart(5)
+        const rateStr = Number(c.price).toFixed(2).padStart(7)
+        const amtStr = (Number(c.price) * Number(c.qty)).toFixed(2).padStart(8)
 
         const words = String(c.name || 'Item').trim().split(/\s+/)
         const nameLines = []
         let currentLine = ''
 
         words.forEach((word) => {
-          if ((currentLine + (currentLine ? ' ' : '') + word).length <= 14) {
+          if ((currentLine + (currentLine ? ' ' : '') + word).length <= 12) {
             currentLine += (currentLine ? ' ' : '') + word
           } else {
             if (currentLine) nameLines.push(currentLine)
             let remaining = word
-            while (remaining.length > 14) {
-              nameLines.push(remaining.slice(0, 14))
-              remaining = remaining.slice(14)
+            while (remaining.length > 12) {
+              nameLines.push(remaining.slice(0, 12))
+              remaining = remaining.slice(12)
             }
             currentLine = remaining
           }
@@ -1230,15 +1238,23 @@ const Order = () => {
         if (currentLine) nameLines.push(currentLine)
 
         nameLines.forEach((nLine, idx) => {
-          const paddedName = nLine.padEnd(14)
+          const paddedName = nLine.padEnd(12)
           if (idx === 0) {
-            resultLines.push(`${paddedName} ${itemQty} ${itemRate} ${lineTotal}`)
+            resultLines.push(`${paddedName}${qtyStr}${rateStr}${amtStr}`)
           } else {
-            resultLines.push(`${paddedName}                   `)
+            resultLines.push(`${paddedName}                    `) // 12 + 20 spaces = 32
           }
         })
       })
       return resultLines
+    }
+
+    // Totals row formatter: Label left-aligned, Amount right-aligned within 32 chars
+    const formatTotalRow = (label, amount) => {
+      const valStr = `Rs. ${Number(amount).toFixed(2)}`
+      const availableSpace = 32 - valStr.length
+      const paddedLabel = label.padEnd(Math.max(0, availableSpace))
+      return `${paddedLabel}${valStr}`.slice(0, 32)
     }
 
     const now = new Date()
@@ -1246,31 +1262,32 @@ const Order = () => {
     const billTime = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })
     const tempOrderId = `ORD-${Date.now().toString().slice(-6)}`
 
-    const billReceiptText = [
+    // Build strict 32-character 58mm thermal receipt text
+    const billReceiptLines = [
       '================================',
-      ...wrapAndCenterText(storeName, 32),
-      ...wrapAndCenterText(invoiceHeader, 32),
-      ...(gstinText ? wrapAndCenterText(gstinText, 32) : []),
+      ...headerLines,
       '================================',
       `Date  : ${billDate}  ${billTime}`,
       `Type  : ${(activeOrderType || 'Dine-in').toUpperCase()}`,
-      isRegisteredCustomerName(name) ? `Name  : ${name.trim()}` : '',
-      phone && phone.trim() ? `Phone : ${phone.trim()}` : '',
+      isRegisteredCustomerName(name) ? `Name  : ${name.trim()}`.slice(0, 32) : null,
+      phone && phone.trim() ? `Phone : ${phone.trim()}`.slice(0, 32) : null,
       `Pay   : ${normalizedMethod}`,
       '--------------------------------',
-      'ITEM           QTY   RATE  TOTAL',
+      'ITEM          QTY   RATE  AMOUNT',
       '--------------------------------',
-      ...formatBillItemRows(cart || [], 32),
+      ...formatBillItemRows(cart || []),
       '--------------------------------',
-      `SUBTOTAL     : Rs. ${Number(subtotal).toFixed(2)}`,
-      `CGST ${cgstRate.toFixed(2).padStart(4)}%  : Rs. ${Number(cgstAmount).toFixed(2)}`,
-      `SGST ${sgstRate.toFixed(2).padStart(4)}%  : Rs. ${Number(sgstAmount).toFixed(2)}`,
+      formatTotalRow('SUBTOTAL', subtotal),
+      formatTotalRow(`CGST ${cgstRate.toFixed(2)}%`, cgstAmount),
+      formatTotalRow(`SGST ${sgstRate.toFixed(2)}%`, sgstAmount),
       '================================',
-      `GRAND TOTAL  : Rs. ${Number(total).toFixed(2)}`,
+      formatTotalRow('GRAND TOTAL', total),
       '================================',
       '--------------------------------',
-      ...wrapAndCenterText(footerText, 32),
-    ].filter(Boolean).join('\n')
+      ...footerLines,
+    ].filter(Boolean)
+
+    const billReceiptText = billReceiptLines.join('\n')
 
     try {
       let customerId = null

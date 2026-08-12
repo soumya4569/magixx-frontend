@@ -146,6 +146,7 @@ const CustomItemModal = ({ onClose, onAdd }) => {
 /* Payment Modal component */
 const PaymentModal = ({ total, onClose, onConfirm }) => {
   const [method, setMethod] = useState('UPI / QR')
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   // Get business name from store settings if available
   const businessName = useMemo(() => {
@@ -261,15 +262,29 @@ const PaymentModal = ({ total, onClose, onConfirm }) => {
         <div className="flex items-center justify-end gap-2">
           <button
             onClick={onClose}
-            className="rounded-xl border border-gray-200 px-4 py-2 text-xs font-bold text-gray-600 hover:bg-gray-50 transition"
+            disabled={isSubmitting}
+            className="rounded-xl border border-gray-200 px-4 py-2 text-xs font-bold text-gray-600 hover:bg-gray-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Cancel
           </button>
           <button
-            onClick={() => onConfirm(method)}
-            className="rounded-xl bg-green-600 px-5 py-2 text-xs font-extrabold text-white shadow-md hover:bg-green-700 transition"
+            disabled={isSubmitting}
+            onClick={async () => {
+              if (isSubmitting) return
+              setIsSubmitting(true)
+              try {
+                // Phase 1 executes synchronously inside confirmPayment;
+                // modal will unmount after this call returns.
+                await onConfirm(method)
+              } finally {
+                // Guard reset is a safety net — modal is already unmounted
+                // by the time this fires, so this is effectively a no-op.
+                setIsSubmitting(false)
+              }
+            }}
+            className="rounded-xl bg-green-600 px-5 py-2 text-xs font-extrabold text-white shadow-md hover:bg-green-700 transition disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            Confirm Payment
+            {isSubmitting ? 'Processing…' : 'Confirm Payment'}
           </button>
         </div>
       </div>
@@ -1090,6 +1105,40 @@ const Order = () => {
     setShowPayModal(true)
   }
 
+  /**
+   * printFinalBill — fire-and-forget async helper.
+   * Called via setTimeout after the payment modal has already been closed,
+   * so it never blocks the UI or causes modal lock-up.
+   *
+   * @param {string} receiptText  Pre-built plain-text receipt content
+   * @param {Function} toastFn    Toast callback (type: 'success' | 'warning' | 'error')
+   */
+  const printFinalBill = async (receiptText, toastFn) => {
+    try {
+      const printerConfig = getPrinterConfig('billing')
+      if (!printerConfig?.name?.trim()) {
+        console.warn('[printFinalBill] No billing printer configured in settings. Skipping print.')
+        toastFn('Receipt not printed: No billing printer configured in Settings.', 'warning')
+        return
+      }
+
+      console.log(`[printFinalBill] Sending final bill to billing printer: "${printerConfig.name}"`)
+      const ok = await sendToBluetoothPrinter('billing', receiptText, toastFn)
+
+      if (!ok) {
+        // sendToBluetoothPrinter already emits its own error toast internally;
+        // log additionally here for traceability in the main process console.
+        console.error('[printFinalBill] sendToBluetoothPrinter returned false — check IPC logs above.')
+      }
+    } catch (printErr) {
+      console.error('[printFinalBill] Uncaught exception during final bill print:', printErr)
+      toastFn(
+        `Print error: ${printErr?.message || 'Unknown printer error'}. Check USB/printer connection and try manually.`,
+        'error'
+      )
+    }
+  }
+
   const confirmPayment = async (method = 'Cash') => {
     const currentToken = tokens.get(activeToken)
     const phone = (currentToken?.customerPhone || '').trim()
@@ -1252,28 +1301,30 @@ const Order = () => {
         time: billTime,
       }
 
+      // ── Phase 1: Settle order state & close modal synchronously ──────────────
+      // All UI state mutations happen here, before any async print I/O.
+      // React will commit these state updates and unmount the modal as soon as
+      // confirmPayment returns (or awaits the next microtask), preventing any
+      // UI lockup or modal blocking from the subsequent IPC print call.
       setLastPrintedDoc(billDoc)
-      setShowPayModal(false)
+      setShowPayModal(false)  // ← Modal closes here; Phase 2 runs AFTER unmount
       clearToken(activeToken)
       window.dispatchEvent(new Event('pos:data-updated'))
-
       toast(`Payment (${normalizedMethod}) Successful`, 'success')
 
-      // Explicitly trigger thermal receipt printing with full order details wrapped in try-catch
-      try {
-        const printerConfig = getPrinterConfig('billing')
-        if (!printerConfig || !printerConfig.name || !printerConfig.name.trim()) {
-          toast('Failed to print receipt: Please check printer settings.', 'error')
-        } else {
-          const printSuccess = await sendToBluetoothPrinter('billing', billReceiptText, toast)
-          if (!printSuccess) {
-            // Failure toast is dispatched inside sendToBluetoothPrinter
-          }
-        }
-      } catch (printErr) {
-        console.error('[ConfirmPayment] Thermal receipt print trigger exception:', printErr)
-        toast('Failed to print receipt: Please check printer settings.', 'error')
-      }
+      // ── Phase 2: Fire-and-forget thermal print (deferred past current call stack) ─
+      // setTimeout(..., 0) yields back to the React event loop, guaranteeing the
+      // modal is fully unmounted before the blocking Electron IPC print call begins.
+      // This prevents UI lockup on slow USB thermal printers and virtual print drivers.
+      const receiptTextSnapshot = billReceiptText  // capture before any state mutation
+      const toastSnapshot = toast                  // stable reference for the closure
+      setTimeout(() => {
+        printFinalBill(receiptTextSnapshot, toastSnapshot).catch((unexpectedErr) => {
+          // Safety net: printFinalBill is already fully try/caught internally.
+          // This outer catch handles any Promise-level rejection that escapes it.
+          console.error('[confirmPayment] Unhandled rejection in printFinalBill:', unexpectedErr)
+        })
+      }, 0)
     } catch (err) {
       console.error('Order submission error:', err)
       const errMsg = err.response?.data?.message || err.message || 'Error processing order backend submission'

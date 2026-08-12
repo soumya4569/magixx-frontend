@@ -94,6 +94,24 @@ ipcMain.handle('print-receipt', async (event, { printerName, textContent }) => {
 
       printWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(htmlContent)}`);
 
+      printWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+        // Handles cases where the data: URI fails to load in the hidden window
+        // (rare, but can occur with certain virtual or restricted print drivers).
+        console.error(
+          `[IPC print-receipt] ✗ Receipt HTML failed to load in hidden window: [${errorCode}] ${errorDescription}`
+        );
+        console.error(
+          `[IPC print-receipt] Hint: This may indicate a sandboxing or driver restriction. Verify Electron webPreferences.`
+        );
+        if (printWindow && !printWindow.isDestroyed()) {
+          printWindow.close();
+        }
+        resolve({
+          success: false,
+          error: `Receipt content failed to load (${errorCode}): ${errorDescription}`,
+        });
+      });
+
       printWindow.webContents.on('did-finish-load', () => {
         const options = {
           silent: true,
@@ -107,11 +125,20 @@ ipcMain.handle('print-receipt', async (event, { printerName, textContent }) => {
             printWindow.close();
           }
           if (success) {
-            console.log(`[Electron Main] Printed receipt successfully on "${targetPrinterName}"`);
+            console.log(
+              `[IPC print-receipt] ✓ Receipt dispatched to printer "${targetPrinterName}" successfully.`
+            );
             resolve({ success: true });
           } else {
-            console.error(`[Electron Main] Print failed on "${targetPrinterName}":`, failureReason);
-            resolve({ success: false, error: failureReason });
+            const reason = failureReason || 'Unknown print failure (no reason returned by OS spooler)';
+            console.error(
+              `[IPC print-receipt] ✗ Print failed on "${targetPrinterName}": ${reason}`
+            );
+            console.error(
+              `[IPC print-receipt] Hint: Verify the printer name exactly matches the Windows device name, ` +
+              `confirm the USB cable is connected, and check the Windows print spooler service is running.`
+            );
+            resolve({ success: false, error: reason });
           }
         });
       });

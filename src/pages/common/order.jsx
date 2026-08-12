@@ -793,27 +793,59 @@ const Order = () => {
       note: i.note || '',
     }))
 
-    // Build ESC/POS 58 mm (32 chars max width) KOT receipt text
+    // Helper functions for 32-character max width 58mm thermal print formatting
     const centerText = (str, width = 32) => {
-      const s = String(str || '').trim().slice(0, width)
+      const s = String(str || '').trim()
+      if (s.length >= width) return s.slice(0, width)
       const pad = Math.floor((width - s.length) / 2)
       return ' '.repeat(Math.max(0, pad)) + s
     }
 
+    const wrapAndCenterText = (str, width = 32) => {
+      if (!str || !String(str).trim()) return []
+      const words = String(str).trim().split(/\s+/)
+      const rawLines = []
+      let currentLine = ''
+
+      words.forEach((word) => {
+        if ((currentLine + (currentLine ? ' ' : '') + word).length <= width) {
+          currentLine += (currentLine ? ' ' : '') + word
+        } else {
+          if (currentLine) rawLines.push(currentLine)
+          let remaining = word
+          while (remaining.length > width) {
+            rawLines.push(remaining.slice(0, width))
+            remaining = remaining.slice(width)
+          }
+          currentLine = remaining
+        }
+      })
+      if (currentLine) rawLines.push(currentLine)
+
+      return rawLines.map((line) => centerText(line, width))
+    }
+
+    const isRegisteredCustomer = (cName) => {
+      if (!cName || typeof cName !== 'string') return false
+      const trimmed = cName.trim()
+      if (!trimmed) return false
+      return !/^(walk-?in|walk-?in guest|guest|unregistered|default)$/i.test(trimmed)
+    }
+
     const lineSeparatorDouble = '='.repeat(32)
     const lineSeparatorSingle = '-'.repeat(32)
-    const storeName = (billingSettings.storeName || 'MAGIXX SWEETS & CAFE').trim()
+    const storeName = billingSettings.storeName || 'MAGIXX SWEETS & CAFE'
     const kotTime = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
     const formattedOrderType = String(activeOrderType || 'Dine-in').toUpperCase()
 
     const kotReceiptLines = [
       lineSeparatorDouble,
-      centerText(storeName),
-      centerText('*** KITCHEN ORDER TICKET ***'),
+      ...wrapAndCenterText(storeName, 32),
+      ...wrapAndCenterText('*** KITCHEN ORDER TICKET ***', 32),
       lineSeparatorDouble,
       `Token : #${fmtToken(activeToken)}`.slice(0, 32),
       `Time  : ${kotTime}`.slice(0, 32),
-      currentToken?.customerName ? `Name  : ${currentToken.customerName}`.slice(0, 32) : '',
+      isRegisteredCustomer(currentToken?.customerName) ? `Name  : ${currentToken.customerName.trim()}`.slice(0, 32) : '',
       lineSeparatorSingle,
       centerText(`*** TYPE: ${formattedOrderType} ***`).slice(0, 32),
       lineSeparatorSingle,
@@ -842,9 +874,34 @@ const Order = () => {
 
     printItems.forEach((i) => {
       const qtyPrefix = `${i.qty}x `.padEnd(4)
-      const maxNameLen = 32 - qtyPrefix.length
-      const truncatedName = i.name.length > maxNameLen ? i.name.slice(0, maxNameLen) : i.name
-      kotReceiptLines.push(`${qtyPrefix}${truncatedName}`)
+      const indentSpaces = '    '
+      const name = i.name || 'Item'
+      const words = String(name).trim().split(/\s+/)
+      const nameLines = []
+      let currentLine = ''
+
+      words.forEach((word) => {
+        if ((currentLine + (currentLine ? ' ' : '') + word).length <= 28) {
+          currentLine += (currentLine ? ' ' : '') + word
+        } else {
+          if (currentLine) nameLines.push(currentLine)
+          let remaining = word
+          while (remaining.length > 28) {
+            nameLines.push(remaining.slice(0, 28))
+            remaining = remaining.slice(28)
+          }
+          currentLine = remaining
+        }
+      })
+      if (currentLine) nameLines.push(currentLine)
+
+      nameLines.forEach((nLine, idx) => {
+        if (idx === 0) {
+          kotReceiptLines.push(`${qtyPrefix}${nLine}`)
+        } else {
+          kotReceiptLines.push(`${indentSpaces}${nLine}`)
+        }
+      })
 
       if (i.note && i.note.trim()) {
         const formattedNotes = formatNoteLines(i.note.trim(), 32)
@@ -1065,38 +1122,71 @@ const Order = () => {
     }
 
     // Build the bill receipt text before attempting print
-    const billDate = new Date().toLocaleDateString('en-GB')
-    const billTime = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
-    const tempOrderId = `ORD-${Date.now().toString().slice(-6)}`
+    const isRegisteredCustomerName = (cName) => {
+      if (!cName || typeof cName !== 'string') return false
+      const trimmed = cName.trim()
+      if (!trimmed) return false
+      return !/^(walk-?in|walk-?in guest|guest|unregistered|default)$/i.test(trimmed)
+    }
 
-    const formatReceiptCenter = (str, width = 32) => {
-      const s = String(str || '').trim().slice(0, width)
-      const pad = Math.floor((width - s.length) / 2)
-      return ' '.repeat(Math.max(0, pad)) + s
+    const storeName = billingSettings.storeName || 'MAGIXX SWEETS & CAFE'
+    const invoiceHeader = billingSettings.invoiceHeader || 'Opposite Kalyan Mandap, Near Joda Bus Stand, Odisha • Ph: 7001322855'
+    const gstinText = billingSettings.gstin ? `GSTIN: ${billingSettings.gstin}` : ''
+    const footerText = billingSettings.invoiceFooter || billingSettings.footerNotes || 'THANK YOU FOR VISITING MAGIXX! HAVE A SWEET DAY • VISIT AGAIN'
+
+    const formatBillItemRows = (items, width = 32) => {
+      const resultLines = []
+      items.forEach((c) => {
+        const itemQty = String(c.qty).padStart(3)
+        const itemRate = Number(c.price).toFixed(2).padStart(6)
+        const lineTotal = (Number(c.price) * Number(c.qty)).toFixed(2).padStart(6)
+
+        const words = String(c.name || 'Item').trim().split(/\s+/)
+        const nameLines = []
+        let currentLine = ''
+
+        words.forEach((word) => {
+          if ((currentLine + (currentLine ? ' ' : '') + word).length <= 14) {
+            currentLine += (currentLine ? ' ' : '') + word
+          } else {
+            if (currentLine) nameLines.push(currentLine)
+            let remaining = word
+            while (remaining.length > 14) {
+              nameLines.push(remaining.slice(0, 14))
+              remaining = remaining.slice(14)
+            }
+            currentLine = remaining
+          }
+        })
+        if (currentLine) nameLines.push(currentLine)
+
+        nameLines.forEach((nLine, idx) => {
+          const paddedName = nLine.padEnd(14)
+          if (idx === 0) {
+            resultLines.push(`${paddedName} ${itemQty} ${itemRate} ${lineTotal}`)
+          } else {
+            resultLines.push(`${paddedName}                   `)
+          }
+        })
+      })
+      return resultLines
     }
 
     const billReceiptText = [
       '================================',
-      formatReceiptCenter(billingSettings.storeName || 'MAGIXX SWEETS & CAFE', 32),
-      billingSettings.invoiceHeader ? formatReceiptCenter(billingSettings.invoiceHeader, 32) : '',
-      billingSettings.gstin ? formatReceiptCenter(`GSTIN: ${billingSettings.gstin}`, 32) : '',
+      ...wrapAndCenterText(storeName, 32),
+      ...wrapAndCenterText(invoiceHeader, 32),
+      ...(gstinText ? wrapAndCenterText(gstinText, 32) : []),
       '================================',
-      `Order : ${tempOrderId}`,
       `Date  : ${billDate}  ${billTime}`,
       `Type  : ${(activeOrderType || 'Dine-in').toUpperCase()}`,
-      name ? `Name  : ${name}` : '',
-      phone ? `Phone : ${phone}` : '',
+      isRegisteredCustomerName(name) ? `Name  : ${name.trim()}` : '',
+      phone && phone.trim() ? `Phone : ${phone.trim()}` : '',
       `Pay   : ${normalizedMethod}`,
       '--------------------------------',
-      'ITEM           QTY  RATE   TOTAL',
+      'ITEM           QTY   RATE  TOTAL',
       '--------------------------------',
-      ...(cart || []).map((c) => {
-        const itemQty = String(c.qty).padStart(3)
-        const itemRate = Number(c.price).toFixed(2).padStart(6)
-        const lineTotal = (Number(c.price) * Number(c.qty)).toFixed(2).padStart(6)
-        const itemName = c.name.slice(0, 14).padEnd(14)
-        return `${itemName} ${itemQty} ${itemRate} ${lineTotal}`
-      }),
+      ...formatBillItemRows(cart || [], 32),
       '--------------------------------',
       `SUBTOTAL     : Rs. ${Number(subtotal).toFixed(2)}`,
       `CGST ${cgstRate.toFixed(2).padStart(4)}%  : Rs. ${Number(cgstAmount).toFixed(2)}`,
@@ -1104,9 +1194,8 @@ const Order = () => {
       '================================',
       `GRAND TOTAL  : Rs. ${Number(total).toFixed(2)}`,
       '================================',
-      `(Incl. Tax   : Rs. ${Number(taxAmount).toFixed(2)})`,
       '--------------------------------',
-      billingSettings.invoiceFooter ? formatReceiptCenter(billingSettings.invoiceFooter, 32) : '',
+      ...wrapAndCenterText(footerText, 32),
     ].filter(Boolean).join('\n')
 
     // Silently print customer bill receipt to Billing printer via Electron Native IPC
@@ -1872,16 +1961,17 @@ const Order = () => {
           ) : (
             <div className="space-y-1.5 text-center text-xs w-[50mm] max-w-[50mm] mx-auto overflow-hidden text-black font-mono">
               <div className="border-b-2 border-black pb-1">
-                <h2 className="text-xs font-black uppercase">{billingSettings.storeName || 'MAGIXX SWEETS & CAFE'}</h2>
-                <p className="text-[9px]">{billingSettings.invoiceHeader || 'Main Road, Cafe Square, Odisha'}</p>
-                <p className="text-[9px]">GSTIN: {billingSettings.gstin || '21ABCDE1234F1Z5'}</p>
-                <p className="text-[10px] font-extrabold uppercase mt-0.5">TAX INVOICE / RECEIPT</p>
+                <h2 className="text-xs font-black uppercase text-center leading-tight">{billingSettings.storeName || 'MAGIXX SWEETS & CAFE'}</h2>
+                <p className="text-[9px] text-center leading-tight break-words">{billingSettings.invoiceHeader || 'Opposite Kalyan Mandap, Near Joda Bus Stand, Odisha • Ph: 7001322855'}</p>
+                {billingSettings.gstin && <p className="text-[9px] text-center">GSTIN: {billingSettings.gstin}</p>}
+                <p className="text-[10px] font-extrabold uppercase mt-0.5 text-center">TAX INVOICE / RECEIPT</p>
               </div>
               <div className="flex justify-between text-[9px] font-bold border-b border-black pb-1 text-left">
                 <div>
                   <p>TOKEN #: <span className="text-xs font-black">#{String(lastPrintedDoc.tokenNumber).padStart(2, '0')}</span></p>
-                  <p>ORDER: {lastPrintedDoc.orderId || 'ORD-BILL'}</p>
-                  <p>CUST: {lastPrintedDoc.customerName || 'Walk-in'}</p>
+                  {lastPrintedDoc.customerName && !/^(walk-?in|walk-?in guest|guest|unregistered|default)$/i.test(lastPrintedDoc.customerName.trim()) && (
+                    <p>CUST: {lastPrintedDoc.customerName.trim()}</p>
+                  )}
                 </div>
                 <div className="text-right">
                   <p>DATE: {lastPrintedDoc.date || new Date().toLocaleDateString('en-GB')}</p>
@@ -1908,7 +1998,7 @@ const Order = () => {
                 ))}
               </div>
 
-              {/* Subtotal, CGST, SGST, Grand Total with enlarged, bold typography & no question marks */}
+              {/* Subtotal, CGST, SGST, Grand Total with enlarged, bold typography & clean layout */}
               <div className="space-y-0.5 border-b border-black pb-1 text-right">
                 <div className="flex justify-between text-xs font-extrabold">
                   <span>SUBTOTAL:</span>
@@ -1927,7 +2017,7 @@ const Order = () => {
                   <span className="text-sm font-black">Rs.{lastPrintedDoc.total?.toFixed(2)}</span>
                 </div>
               </div>
-              <div className="pt-0.5 text-[9px] font-bold uppercase text-center">
+              <div className="pt-0.5 text-[9px] font-bold uppercase text-center break-words leading-tight">
                 <p>{billingSettings.invoiceFooter || billingSettings.footerNotes || 'THANK YOU FOR VISITING MAGIXX! HAVE A SWEET DAY • VISIT AGAIN'}</p>
               </div>
             </div>

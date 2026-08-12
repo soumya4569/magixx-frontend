@@ -10,6 +10,7 @@ function createWindow() {
     width: 1280,
     height: 800,
     title: 'MAGIXX Sweets & Cafe POS',
+    icon: path.join(__dirname, 'build/icon.ico'),
     autoHideMenuBar: true,
     webPreferences: {
       nodeIntegration: false,

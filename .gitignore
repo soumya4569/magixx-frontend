@@ -11,6 +11,7 @@ node_modules
 dist/
 dist_electron/
 build/
+!build/icon.ico
 release/
 dist-ssr
 coverage

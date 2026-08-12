@@ -1,14 +1,16 @@
 {
   "name": "posfe",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "main": "main.js",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "clean": "node -e \"fs.rmSync('release', {recursive: true, force: true}); fs.rmSync('dist', {recursive: true, force: true});\"",
+    "build": "npm run clean && vite build",
     "start": "electron .",
-    "dist": "electron-builder",
+    "predist": "npm run clean",
+    "dist": "vite build && electron-builder",
     "lint": "eslint .",
     "preview": "vite preview"
   },
@@ -21,16 +23,20 @@
     "files": [
       "dist/**/*",
       "main.js",
-      "preload.cjs"
+      "preload.cjs",
+      "build/**/*"
     ],
     "win": {
       "target": [
         "nsis"
-      ]
+      ],
+      "icon": "build/icon.ico"
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico"
     }
   },
   "dependencies": {

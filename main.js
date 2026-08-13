@@ -37,7 +37,7 @@ ipcMain.handle('get-system-printers', async (event) => {
 });
 
 // IPC Listener to handle silent native thermal receipt printing via Electron webContents
-ipcMain.handle('print-receipt', async (event, { printerName, textContent }) => {
+ipcMain.handle('print-receipt', async (event, { printerName, textContent, htmlContent: rawHtmlContent }) => {
   // Strict Guard Clause: Abort immediately if no valid printer device name is selected
   if (!printerName || typeof printerName !== 'string' || printerName.trim() === '') {
     console.warn('[Electron Main] Silent print aborted: No printer device name specified in settings.');
@@ -60,14 +60,36 @@ ipcMain.handle('print-receipt', async (event, { printerName, textContent }) => {
         },
       });
 
-      const safeText = (textContent || '')
-        .replace(/[\u20B9₹]/g, 'Rs.')
-        .replace(/\?+(?=\s*Rs\.|\s*\d)/gi, '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
+      const inputContent = rawHtmlContent || textContent || '';
+      let finalHtml = '';
 
-      const htmlContent = `<!DOCTYPE html>
+      if (inputContent.trim().startsWith('<') || inputContent.includes('<div') || inputContent.includes('<table')) {
+        finalHtml = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    @page { margin: 0; size: 58mm auto; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #fff;
+      color: #000;
+      width: 58mm;
+    }
+  </style>
+</head>
+<body>${inputContent}</body>
+</html>`;
+      } else {
+        const safeText = inputContent
+          .replace(/[\u20B9₹]/g, 'Rs.')
+          .replace(/\?+(?=\s*Rs\.|\s*\d)/gi, '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+
+        finalHtml = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
@@ -91,8 +113,9 @@ ipcMain.handle('print-receipt', async (event, { printerName, textContent }) => {
 </head>
 <body>${safeText}</body>
 </html>`;
+      }
 
-      printWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(htmlContent)}`);
+      printWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(finalHtml)}`);
 
       printWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
         // Handles cases where the data: URI fails to load in the hidden window

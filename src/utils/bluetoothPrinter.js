@@ -99,6 +99,7 @@ export const sendToNativePrinter = async (printerType, receiptText, toast = cons
     const result = await window.electronAPI.printReceipt({
       printerName: config.name.trim(),
       textContent: receiptText,
+      htmlContent: receiptText,
     });
 
     if (result && result.success) {

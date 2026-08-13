@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../../services/api'
 import { sendToBluetoothPrinter, checkPrinterStreamStatus } from '../../utils/bluetoothPrinter'
-import { generateThermalReceiptText } from '../../utils/receiptGenerator'
+import { generateThermalReceiptText, generateThermalReceiptHTML } from '../../utils/receiptGenerator'
 import { clearAuthSession } from '../../utils/auth'
 
 /* ── Inline SVG icon primitives ── */
@@ -309,7 +309,7 @@ const Settings = () => {
     let sampleReceipt = ''
 
     if (printerType === 'billing') {
-      sampleReceipt = generateThermalReceiptText({
+      sampleReceipt = generateThermalReceiptHTML({
         tokenNumber: '99',
         dateTime: `${new Date().toLocaleDateString('en-GB')} ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}`,
         orderType: 'Dine-in',

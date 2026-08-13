@@ -1191,7 +1191,7 @@ const Order = () => {
     const billDate = now.toLocaleDateString('en-GB')
     const billTime = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
 
-    const billReceiptText = generateThermalReceiptText({
+    const billReceiptText = generateThermalReceiptHTML({
       tokenNumber: activeToken,
       dateTime: `${billDate} ${billTime}`,
       orderType: activeOrderType || 'Dine-in',
@@ -1968,93 +1968,12 @@ const Order = () => {
               </div>
             </div>
           ) : (
-            <div className="thermal-receipt-container text-black font-mono text-[11px] leading-tight w-[48mm] max-w-[48mm] mx-auto py-1 space-y-1">
-              {/* 1. Header Section (Centered) */}
-              <div className="text-center">
-                <div className="font-bold text-xs uppercase">{billingSettings.storeName || 'Magixx Sweets & Cafe'}</div>
-                <div className="text-[10px] break-words">
-                  {(() => {
-                    let addr = billingSettings.address || 'Opposite of Kalyan Mandap, Joda, - 756121'
-                    return /^address:/i.test(addr.trim()) ? addr.trim() : `Address: ${addr.trim()}`
-                  })()}
-                </div>
-                <div className="text-[10px]">GSTIN - {billingSettings.gstin || '21ATDPK9131G1Z1'}</div>
-                <div className="text-[10px]">Phone - {billingSettings.phone || '7001322855'}</div>
-                <div className="border-b border-dashed border-black my-1"></div>
-                <div className="font-bold text-xs tracking-wider">INVOICE</div>
-                <div className="border-b border-dashed border-black my-1"></div>
-              </div>
-
-              {/* 2. Order Information (Left-Aligned) */}
-              <div className="text-left text-[10px] space-y-0.5">
-                <div>Invoice No - ORD-{lastPrintedDoc.tokenNumber || lastPrintedDoc.orderId || '1001'}</div>
-                <div>Date/time - {lastPrintedDoc.date || new Date().toLocaleDateString('en-GB')} {lastPrintedDoc.time || new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}</div>
-                <div>Type - {lastPrintedDoc.orderType || 'Dine-in'}</div>
-                <div>Pay - {lastPrintedDoc.paymentMethod || 'Cash'}</div>
-                <div className="border-b border-dashed border-black my-1"></div>
-              </div>
-
-              {/* 3. Item List Structure (2-Line Row Layout) */}
-              <div className="text-left space-y-1">
-                {/* Header Line */}
-                <div className="font-bold text-[10px]">
-                  <div>Item Name</div>
-                  <div className="flex justify-between items-center text-[10px]">
-                    <span className="w-1/3 text-left">Qty.</span>
-                    <span className="w-1/3 text-center">Price</span>
-                    <span className="w-1/3 text-right">Amount</span>
-                  </div>
-                </div>
-                <div className="border-b border-dashed border-black my-1"></div>
-
-                {/* Data Rows (2 Lines per Item) */}
-                {(lastPrintedDoc.items || []).map((item, idx) => {
-                  const qty = item.qty ?? item.quantity ?? 1
-                  const price = Number(item.price || 0)
-                  const amount = Number(item.amount ?? (price * qty))
-                  const formatVal = (v) => Number.isInteger(Number(v)) ? String(v) : Number(v).toFixed(2)
-                  return (
-                    <div key={idx} className="text-[10px] space-y-0.5">
-                      <div className="font-bold break-words">{item.name || item.title || 'Item'}</div>
-                      <div className="flex justify-between items-center text-[10px]">
-                        <span className="w-1/3 text-left">{formatVal(qty)}</span>
-                        <span className="w-1/3 text-center">{formatVal(price)}</span>
-                        <span className="w-1/3 text-right">{formatVal(amount)}</span>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-
-              {/* 4. Totals Block (Left/Right Aligned) */}
-              <div className="text-[10px] space-y-0.5">
-                <div className="border-b border-dashed border-black my-1"></div>
-                <div className="flex justify-between">
-                  <span>Sub total :</span>
-                  <span>{(lastPrintedDoc.subtotal || 0).toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>CGST {(parseFloat(billingSettings.taxRate || '5.00') / 2).toFixed(1).replace(/\.0$/, '')}% :</span>
-                  <span>{((lastPrintedDoc.taxAmount || 0) / 2).toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>SGST {(parseFloat(billingSettings.taxRate || '5.00') / 2).toFixed(1).replace(/\.0$/, '')}% :</span>
-                  <span>{((lastPrintedDoc.taxAmount || 0) / 2).toFixed(2)}</span>
-                </div>
-                <div className="border-b border-dashed border-black my-1"></div>
-                <div className="flex justify-between font-bold text-xs">
-                  <span>Total :</span>
-                  <span>{(lastPrintedDoc.total || 0).toFixed(2)}</span>
-                </div>
-                <div className="border-b border-dashed border-black my-1"></div>
-              </div>
-
-              {/* 5. Footer Section (Centered) */}
-              <div className="text-center text-[10px] pt-1">
-                <div>Have a Sweet Day</div>
-                <div>Visit Again.</div>
-              </div>
-            </div>
+            <div dangerouslySetInnerHTML={{
+              __html: generateThermalReceiptHTML({
+                ...lastPrintedDoc,
+                dateTime: `${lastPrintedDoc.date || new Date().toLocaleDateString('en-GB')} ${lastPrintedDoc.time || new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}`,
+              }, billingSettings)
+            }} />
           )}
         </div>
       )}

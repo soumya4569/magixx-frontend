@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useMemo } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import api from '../../services/api'
 import { sendToBluetoothPrinter, getPrinterConfig } from '../../utils/bluetoothPrinter'
+import { generateThermalReceiptText, generateThermalReceiptHTML } from '../../utils/receiptGenerator'
 
 const BASE_MERCHANT_VPA = 'paytmqr659xjb@ptys'
 
@@ -1186,108 +1187,22 @@ const Order = () => {
       return
     }
 
-    // ── 58mm Thermal Print Layout Helpers (Strict 32-Character Width) ────────
-    const isRegisteredCustomerName = (cName) => {
-      if (!cName || typeof cName !== 'string') return false
-      const trimmed = cName.trim()
-      if (!trimmed) return false
-      return !/^(walk-?in|walk-?in guest|guest|unregistered|default)$/i.test(trimmed)
-    }
-
-    const storeName = billingSettings.storeName || 'MAGIXX Sweets & Cafe'
-    const gstinText = billingSettings.gstin || '21ATDPK9131G1Z1'
-
-    const headerLines = [
-      ...wrapAndCenterText(storeName, 32),
-      ...wrapAndCenterText('Opposite Kalyan Mandap', 32),
-      ...wrapAndCenterText('Near Joda Bus Stand, Odisha', 32),
-      ...wrapAndCenterText('Ph: 7001322855', 32),
-      ...wrapAndCenterText(`GSTIN: ${gstinText}`, 32),
-    ]
-
-    const footerLines = [
-      ...wrapAndCenterText('THANK YOU FOR VISITING MAGIXX!', 32),
-      ...wrapAndCenterText('HAVE A SWEET DAY • VISIT AGAIN', 32),
-    ]
-
-    // Grid row formatter: ITEM (12 chars left), QTY (5 right), RATE (7 right), AMOUNT (8 right) = 32
-    const formatBillItemRows = (items) => {
-      const resultLines = []
-      items.forEach((c) => {
-        const qtyStr = String(c.qty).padStart(5)
-        const rateStr = Number(c.price).toFixed(2).padStart(7)
-        const amtStr = (Number(c.price) * Number(c.qty)).toFixed(2).padStart(8)
-
-        const words = String(c.name || 'Item').trim().split(/\s+/)
-        const nameLines = []
-        let currentLine = ''
-
-        words.forEach((word) => {
-          if ((currentLine + (currentLine ? ' ' : '') + word).length <= 12) {
-            currentLine += (currentLine ? ' ' : '') + word
-          } else {
-            if (currentLine) nameLines.push(currentLine)
-            let remaining = word
-            while (remaining.length > 12) {
-              nameLines.push(remaining.slice(0, 12))
-              remaining = remaining.slice(12)
-            }
-            currentLine = remaining
-          }
-        })
-        if (currentLine) nameLines.push(currentLine)
-
-        nameLines.forEach((nLine, idx) => {
-          const paddedName = nLine.padEnd(12)
-          if (idx === 0) {
-            resultLines.push(`${paddedName}${qtyStr}${rateStr}${amtStr}`)
-          } else {
-            resultLines.push(`${paddedName}                    `) // 12 + 20 spaces = 32
-          }
-        })
-      })
-      return resultLines
-    }
-
-    // Totals row formatter: Label left-aligned, Amount right-aligned within 32 chars
-    const formatTotalRow = (label, amount) => {
-      const valStr = `Rs. ${Number(amount).toFixed(2)}`
-      const availableSpace = 32 - valStr.length
-      const paddedLabel = label.padEnd(Math.max(0, availableSpace))
-      return `${paddedLabel}${valStr}`.slice(0, 32)
-    }
-
     const now = new Date()
-    const billDate = now.toLocaleDateString('en-IN')
-    const billTime = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })
-    const tempOrderId = `ORD-${Date.now().toString().slice(-6)}`
+    const billDate = now.toLocaleDateString('en-GB')
+    const billTime = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
 
-    // Build strict 32-character 58mm thermal receipt text
-    const billReceiptLines = [
-      '================================',
-      ...headerLines,
-      '================================',
-      `Date  : ${billDate}  ${billTime}`,
-      `Type  : ${(activeOrderType || 'Dine-in').toUpperCase()}`,
-      isRegisteredCustomerName(name) ? `Name  : ${name.trim()}`.slice(0, 32) : null,
-      phone && phone.trim() ? `Phone : ${phone.trim()}`.slice(0, 32) : null,
-      `Pay   : ${normalizedMethod}`,
-      '--------------------------------',
-      'ITEM          QTY   RATE  AMOUNT',
-      '--------------------------------',
-      ...formatBillItemRows(cart || []),
-      '--------------------------------',
-      formatTotalRow('SUBTOTAL', subtotal),
-      formatTotalRow(`CGST ${cgstRate.toFixed(2)}%`, cgstAmount),
-      formatTotalRow(`SGST ${sgstRate.toFixed(2)}%`, sgstAmount),
-      '================================',
-      formatTotalRow('GRAND TOTAL', total),
-      '================================',
-      '--------------------------------',
-      ...footerLines,
-    ].filter(Boolean)
-
-    const billReceiptText = billReceiptLines.join('\n')
+    const billReceiptText = generateThermalReceiptText({
+      tokenNumber: activeToken,
+      dateTime: `${billDate} ${billTime}`,
+      orderType: activeOrderType || 'Dine-in',
+      paymentMethod: normalizedMethod,
+      items: cart || [],
+      subtotal,
+      taxRate: parseFloat(billingSettings.taxRate || '5.00'),
+      cgstAmount,
+      sgstAmount,
+      total,
+    }, billingSettings)
 
     try {
       let customerId = null
@@ -2053,66 +1968,91 @@ const Order = () => {
               </div>
             </div>
           ) : (
-            <div className="space-y-1.5 text-center text-xs w-[50mm] max-w-[50mm] mx-auto overflow-hidden text-black font-mono">
-              <div className="border-b-2 border-black pb-1">
-                <h2 className="text-xs font-black uppercase text-center leading-tight">{billingSettings.storeName || 'MAGIXX SWEETS & CAFE'}</h2>
-                <p className="text-[9px] text-center leading-tight break-words">{billingSettings.invoiceHeader || 'Opposite Kalyan Mandap, Near Joda Bus Stand, Odisha • Ph: 7001322855'}</p>
-                {billingSettings.gstin && <p className="text-[9px] text-center">GSTIN: {billingSettings.gstin}</p>}
-                <p className="text-[10px] font-extrabold uppercase mt-0.5 text-center">TAX INVOICE / RECEIPT</p>
-              </div>
-              <div className="flex justify-between text-[9px] font-bold border-b border-black pb-1 text-left">
-                <div>
-                  <p>TOKEN #: <span className="text-xs font-black">#{String(lastPrintedDoc.tokenNumber).padStart(2, '0')}</span></p>
-                  {lastPrintedDoc.customerName && !/^(walk-?in|walk-?in guest|guest|unregistered|default)$/i.test(lastPrintedDoc.customerName.trim()) && (
-                    <p>CUST: {lastPrintedDoc.customerName.trim()}</p>
-                  )}
+            <div className="thermal-receipt-container text-black font-mono text-[11px] leading-tight w-[48mm] max-w-[48mm] mx-auto py-1 space-y-1">
+              {/* 1. Header Section (Centered) */}
+              <div className="text-center">
+                <div className="font-bold text-xs uppercase">{billingSettings.storeName || 'Magixx Sweets & Cafe'}</div>
+                <div className="text-[10px] break-words">
+                  {(() => {
+                    let addr = billingSettings.address || 'Opposite of Kalyan Mandap, Joda, - 756121'
+                    return /^address:/i.test(addr.trim()) ? addr.trim() : `Address: ${addr.trim()}`
+                  })()}
                 </div>
-                <div className="text-right">
-                  <p>DATE: {lastPrintedDoc.date || new Date().toLocaleDateString('en-GB')}</p>
-                  <p>TIME: {lastPrintedDoc.time || new Date().toLocaleTimeString('en-GB')}</p>
-                  <p>MODE: {lastPrintedDoc.paymentMethod}</p>
-                </div>
+                <div className="text-[10px]">GSTIN - {billingSettings.gstin || '21ATDPK9131G1Z1'}</div>
+                <div className="text-[10px]">Phone - {billingSettings.phone || '7001322855'}</div>
+                <div className="border-b border-dashed border-black my-1"></div>
+                <div className="font-bold text-xs tracking-wider">INVOICE</div>
+                <div className="border-b border-dashed border-black my-1"></div>
               </div>
 
-              {/* 4 Distinct Columns fitting 58mm printable width: ITEM NAME (col-span-5), QTY (col-span-2), RATE (col-span-2), TOTAL (col-span-3) */}
-              <div className="text-left border-b border-black pb-1">
-                <div className="grid grid-cols-12 font-black text-[9px] uppercase border-b border-black pb-1 mb-1">
-                  <span className="col-span-5 text-left">ITEM</span>
-                  <span className="col-span-2 text-center">QTY</span>
-                  <span className="col-span-2 text-right">RATE</span>
-                  <span className="col-span-3 text-right">TOTAL</span>
-                </div>
-                {(lastPrintedDoc.items || []).map((item, idx) => (
-                  <div key={idx} className="grid grid-cols-12 text-[10px] font-bold py-0.5 border-b border-gray-100">
-                    <span className="col-span-5 text-left break-words pr-0.5 leading-tight">{item.name}</span>
-                    <span className="col-span-2 text-center">{item.qty}</span>
-                    <span className="col-span-2 text-right">{Number(item.price || 0).toFixed(2)}</span>
-                    <span className="col-span-3 text-right">{(Number(item.price || 0) * Number(item.qty || 1)).toFixed(2)}</span>
+              {/* 2. Order Information (Left-Aligned) */}
+              <div className="text-left text-[10px] space-y-0.5">
+                <div>Invoice No - ORD-{lastPrintedDoc.tokenNumber || lastPrintedDoc.orderId || '1001'}</div>
+                <div>Date/time - {lastPrintedDoc.date || new Date().toLocaleDateString('en-GB')} {lastPrintedDoc.time || new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}</div>
+                <div>Type - {lastPrintedDoc.orderType || 'Dine-in'}</div>
+                <div>Pay - {lastPrintedDoc.paymentMethod || 'Cash'}</div>
+                <div className="border-b border-dashed border-black my-1"></div>
+              </div>
+
+              {/* 3. Item List Structure (2-Line Row Layout) */}
+              <div className="text-left space-y-1">
+                {/* Header Line */}
+                <div className="font-bold text-[10px]">
+                  <div>Item Name</div>
+                  <div className="flex justify-between items-center text-[10px]">
+                    <span className="w-1/3 text-left">Qty.</span>
+                    <span className="w-1/3 text-center">Price</span>
+                    <span className="w-1/3 text-right">Amount</span>
                   </div>
-                ))}
+                </div>
+                <div className="border-b border-dashed border-black my-1"></div>
+
+                {/* Data Rows (2 Lines per Item) */}
+                {(lastPrintedDoc.items || []).map((item, idx) => {
+                  const qty = item.qty ?? item.quantity ?? 1
+                  const price = Number(item.price || 0)
+                  const amount = Number(item.amount ?? (price * qty))
+                  const formatVal = (v) => Number.isInteger(Number(v)) ? String(v) : Number(v).toFixed(2)
+                  return (
+                    <div key={idx} className="text-[10px] space-y-0.5">
+                      <div className="font-bold break-words">{item.name || item.title || 'Item'}</div>
+                      <div className="flex justify-between items-center text-[10px]">
+                        <span className="w-1/3 text-left">{formatVal(qty)}</span>
+                        <span className="w-1/3 text-center">{formatVal(price)}</span>
+                        <span className="w-1/3 text-right">{formatVal(amount)}</span>
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
 
-              {/* Subtotal, CGST, SGST, Grand Total with enlarged, bold typography & clean layout */}
-              <div className="space-y-0.5 border-b border-black pb-1 text-right">
-                <div className="flex justify-between text-xs font-extrabold">
-                  <span>SUBTOTAL:</span>
-                  <span>Rs.{lastPrintedDoc.subtotal?.toFixed(2)}</span>
+              {/* 4. Totals Block (Left/Right Aligned) */}
+              <div className="text-[10px] space-y-0.5">
+                <div className="border-b border-dashed border-black my-1"></div>
+                <div className="flex justify-between">
+                  <span>Sub total :</span>
+                  <span>{(lastPrintedDoc.subtotal || 0).toFixed(2)}</span>
                 </div>
-                <div className="flex justify-between text-xs font-extrabold">
-                  <span>CGST ({(parseFloat(billingSettings.taxRate || '5.00') / 2).toFixed(2)}%):</span>
-                  <span>+ Rs.{((lastPrintedDoc.taxAmount || 0) / 2).toFixed(2)}</span>
+                <div className="flex justify-between">
+                  <span>CGST {(parseFloat(billingSettings.taxRate || '5.00') / 2).toFixed(1).replace(/\.0$/, '')}% :</span>
+                  <span>{((lastPrintedDoc.taxAmount || 0) / 2).toFixed(2)}</span>
                 </div>
-                <div className="flex justify-between text-xs font-extrabold">
-                  <span>SGST ({(parseFloat(billingSettings.taxRate || '5.00') / 2).toFixed(2)}%):</span>
-                  <span>+ Rs.{((lastPrintedDoc.taxAmount || 0) / 2).toFixed(2)}</span>
+                <div className="flex justify-between">
+                  <span>SGST {(parseFloat(billingSettings.taxRate || '5.00') / 2).toFixed(1).replace(/\.0$/, '')}% :</span>
+                  <span>{((lastPrintedDoc.taxAmount || 0) / 2).toFixed(2)}</span>
                 </div>
-                <div className="flex justify-between items-center text-xs font-black uppercase border-y-2 border-black py-1 my-1 bg-black/5">
-                  <span className="tracking-wide">GRAND TOTAL:</span>
-                  <span className="text-sm font-black">Rs.{lastPrintedDoc.total?.toFixed(2)}</span>
+                <div className="border-b border-dashed border-black my-1"></div>
+                <div className="flex justify-between font-bold text-xs">
+                  <span>Total :</span>
+                  <span>{(lastPrintedDoc.total || 0).toFixed(2)}</span>
                 </div>
+                <div className="border-b border-dashed border-black my-1"></div>
               </div>
-              <div className="pt-0.5 text-[9px] font-bold uppercase text-center break-words leading-tight">
-                <p>{billingSettings.invoiceFooter || billingSettings.footerNotes || 'THANK YOU FOR VISITING MAGIXX! HAVE A SWEET DAY • VISIT AGAIN'}</p>
+
+              {/* 5. Footer Section (Centered) */}
+              <div className="text-center text-[10px] pt-1">
+                <div>Have a Sweet Day</div>
+                <div>Visit Again.</div>
               </div>
             </div>
           )}

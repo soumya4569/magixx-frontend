@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../../services/api'
 import { sendToBluetoothPrinter, checkPrinterStreamStatus } from '../../utils/bluetoothPrinter'
+import { generateThermalReceiptText } from '../../utils/receiptGenerator'
 import { clearAuthSession } from '../../utils/auth'
 
 /* ── Inline SVG icon primitives ── */
@@ -305,17 +306,37 @@ const Settings = () => {
     const label = printerType === 'kot' ? 'Kitchen KOT' : 'Counter Billing'
     showToast(`Sending test print job to ${label}...`)
 
-    const sampleReceipt = [
-      '================================',
-      `   MAGIXX - ${label.toUpperCase()} TEST`,
-      '================================',
-      `Printer: ${printerType === 'kot' ? (safePrinters.kotPrinterName || 'Default System Printer') : (safePrinters.billingPrinterName || 'Default System Printer')}`,
-      `Time: ${new Date().toLocaleTimeString()}`,
-      `Status: TEST PRINT OK`,
-      '--------------------------------',
-      '*** TEST RECEIPT PRINT OK ***',
-      '================================',
-    ].join('\n')
+    let sampleReceipt = ''
+
+    if (printerType === 'billing') {
+      sampleReceipt = generateThermalReceiptText({
+        tokenNumber: '99',
+        dateTime: `${new Date().toLocaleDateString('en-GB')} ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}`,
+        orderType: 'Dine-in',
+        paymentMethod: 'Cash',
+        items: [
+          { name: 'Magixx Pizza', qty: 2, price: 40, amount: 80 },
+          { name: 'Cold Coffee', qty: 1, price: 80, amount: 80 },
+        ],
+        subtotal: 160,
+        taxRate: parseFloat(safeBilling.taxRate || '5.00'),
+        cgstAmount: 4,
+        sgstAmount: 4,
+        total: 168,
+      }, safeBilling)
+    } else {
+      sampleReceipt = [
+        '================================',
+        `   MAGIXX - ${label.toUpperCase()} TEST`,
+        '================================',
+        `Printer: ${safePrinters.kotPrinterName || 'Default System Printer'}`,
+        `Time: ${new Date().toLocaleTimeString()}`,
+        `Status: TEST PRINT OK`,
+        '--------------------------------',
+        '*** TEST RECEIPT PRINT OK ***',
+        '================================',
+      ].join('\n')
+    }
 
     const printed = await sendToBluetoothPrinter(printerType, sampleReceipt, showToast)
     if (printed) {

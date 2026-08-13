@@ -848,26 +848,26 @@ const Order = () => {
       return !/^(walk-?in|walk-?in guest|guest|unregistered|default)$/i.test(trimmed)
     }
 
-    const lineSeparatorDouble = '='.repeat(32)
-    const lineSeparatorSingle = '-'.repeat(32)
+    const lineSeparatorDouble = '='.repeat(28)
+    const lineSeparatorSingle = '-'.repeat(28)
     const storeName = billingSettings.storeName || 'MAGIXX SWEETS & CAFE'
     const kotTime = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
     const formattedOrderType = String(activeOrderType || 'Dine-in').toUpperCase()
 
     const kotReceiptLines = [
       lineSeparatorDouble,
-      ...wrapAndCenterText(storeName, 32),
-      ...wrapAndCenterText('*** KITCHEN ORDER TICKET ***', 32),
+      ...wrapAndCenterText(storeName, 28),
+      ...wrapAndCenterText('*** KITCHEN ORDER TICKET ***', 28),
       lineSeparatorDouble,
-      `Token : #${fmtToken(activeToken)}`.slice(0, 32),
-      `Time  : ${kotTime}`.slice(0, 32),
-      isRegisteredCustomer(currentToken?.customerName) ? `Name  : ${currentToken.customerName.trim()}`.slice(0, 32) : '',
+      `Token : #${fmtToken(activeToken)}`.slice(0, 28),
+      `Time  : ${kotTime}`.slice(0, 28),
+      isRegisteredCustomer(currentToken?.customerName) ? `Name  : ${currentToken.customerName.trim()}`.slice(0, 28) : '',
       lineSeparatorSingle,
-      centerText(`*** TYPE: ${formattedOrderType} ***`).slice(0, 32),
+      centerText(`*** TYPE: ${formattedOrderType} ***`, 28).slice(0, 28),
       lineSeparatorSingle,
     ].filter(Boolean)
 
-    const formatNoteLines = (noteText, width = 32) => {
+    const formatNoteLines = (noteText, width = 28) => {
       const notePrefix = '   Note: '
       const indentSpaces = ' '.repeat(notePrefix.length)
       const maxContentLen = width - notePrefix.length
@@ -897,14 +897,14 @@ const Order = () => {
       let currentLine = ''
 
       words.forEach((word) => {
-        if ((currentLine + (currentLine ? ' ' : '') + word).length <= 28) {
+        if ((currentLine + (currentLine ? ' ' : '') + word).length <= 24) {
           currentLine += (currentLine ? ' ' : '') + word
         } else {
           if (currentLine) nameLines.push(currentLine)
           let remaining = word
-          while (remaining.length > 28) {
-            nameLines.push(remaining.slice(0, 28))
-            remaining = remaining.slice(28)
+          while (remaining.length > 24) {
+            nameLines.push(remaining.slice(0, 24))
+            remaining = remaining.slice(24)
           }
           currentLine = remaining
         }
@@ -920,13 +920,13 @@ const Order = () => {
       })
 
       if (i.note && i.note.trim()) {
-        const formattedNotes = formatNoteLines(i.note.trim(), 32)
+        const formattedNotes = formatNoteLines(i.note.trim(), 28)
         kotReceiptLines.push(...formattedNotes)
       }
     })
 
     kotReceiptLines.push(lineSeparatorDouble)
-    kotReceiptLines.push(centerText('*** SENT TO KITCHEN ***'))
+    kotReceiptLines.push(centerText('*** SENT TO KITCHEN ***', 28))
 
     const kotReceiptText = kotReceiptLines.join('\n')
 

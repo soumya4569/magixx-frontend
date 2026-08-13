@@ -15,12 +15,15 @@ const IC = {
   download:  'M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3',
   receipt:   'M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8',
   check:     'M20 6L9 17l-5-5',
+  trash:     'M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16',
 }
 
 const Payments = () => {
   const [methodFilter, setMethodFilter] = useState('All')
   const [search, setSearch] = useState('')
   const [selectedTx, setSelectedTx] = useState(null)
+  const [deleteConfirmTx, setDeleteConfirmTx] = useState(null)
+  const [deleting, setDeleting] = useState(false)
   const [paymentsList, setPaymentsList] = useState([])
   const [paymentSummary, setPaymentSummary] = useState({ totalRevenue: 0, breakdown: [] })
 
@@ -46,6 +49,8 @@ const Payments = () => {
       .filter((p) => !['Aggregator', 'Zomato', 'Swiggy', 'Eat Odia'].includes(p.paymentMethod))
       .map((p, idx) => ({
         txKey: p._id || `tx-${idx}`,
+        orderId: p.order?._id || p.order || p._id,
+        rawPaymentId: p._id,
         token: p.order?.tokenNumber ? `#${p.order.tokenNumber}` : '#01',
         customer: p.order?.customer?.name || 'Walk-in Guest',
         phone: p.order?.customer?.phone || 'N/A',
@@ -74,6 +79,31 @@ const Payments = () => {
     return matchesMethod && matchesSearch
   })
 
+  const handleConfirmDelete = async () => {
+    if (!deleteConfirmTx) return
+    setDeleting(true)
+    try {
+      const targetId = deleteConfirmTx.orderId || deleteConfirmTx.rawPaymentId || deleteConfirmTx.txKey
+      try {
+        await api.delete(`/orders/${targetId}`)
+      } catch (err) {
+        if (err.response && err.response.status === 404) {
+          await api.delete(`/payments/${targetId}`)
+        } else {
+          throw err
+        }
+      }
+      setDeleteConfirmTx(null)
+      await fetchPaymentsData()
+      window.dispatchEvent(new Event('storage'))
+    } catch (err) {
+      console.error('Failed to delete transaction:', err)
+      alert(err.response?.data?.message || 'Failed to delete transaction. Please try again.')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   return (
     <div className="flex flex-1 flex-col overflow-y-auto space-y-6">
 
@@ -85,7 +115,7 @@ const Payments = () => {
         </div>
         <button
           onClick={() => alert('Exporting payment logs CSV...')}
-          className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-xs font-extrabold text-gray-800 shadow-xs hover:bg-gray-50 transition active:scale-95 shrink-0"
+          className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-xs font-extrabold text-gray-800 shadow-xs hover:bg-gray-50 transition active:scale-95 shrink-0 cursor-pointer"
         >
           <Icon d={IC.download} size={15} />
           <span>Export Transactions</span>
@@ -188,13 +218,24 @@ const Payments = () => {
                   <td className="py-2.5 px-3 text-orange-600 font-medium">₹{tx.tax ? tx.tax.toFixed(2) : '0.00'}</td>
                   <td className="py-2.5 px-3 font-black text-gray-900 text-sm">₹{tx.amount.toFixed(2)}</td>
                   <td className="py-2.5 px-3">
-                    <button
-                      onClick={() => setSelectedTx(tx)}
-                      className="inline-flex items-center gap-1 rounded bg-gray-100 px-2.5 py-1 text-[10px] font-bold text-gray-700 hover:bg-yellow-400 hover:text-zinc-900 transition"
-                    >
-                      <Icon d={IC.receipt} size={12} />
-                      <span>Receipt</span>
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => setSelectedTx(tx)}
+                        className="inline-flex items-center gap-1 rounded bg-gray-100 px-2.5 py-1 text-[10px] font-bold text-gray-700 hover:bg-yellow-400 hover:text-zinc-900 transition cursor-pointer"
+                        title="View Receipt"
+                      >
+                        <Icon d={IC.receipt} size={12} />
+                        <span>Receipt</span>
+                      </button>
+                      <button
+                        onClick={() => setDeleteConfirmTx(tx)}
+                        className="inline-flex items-center gap-1 rounded bg-red-50 border border-red-200 px-2.5 py-1 text-[10px] font-bold text-red-600 hover:bg-red-600 hover:text-white transition cursor-pointer"
+                        title="Delete Order Transaction"
+                      >
+                        <Icon d={IC.trash} size={12} />
+                        <span>Delete</span>
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -247,9 +288,60 @@ const Payments = () => {
             <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
               <button
                 onClick={() => setSelectedTx(null)}
-                className="w-full rounded-xl bg-yellow-400 py-2 text-xs font-extrabold text-zinc-900 hover:bg-yellow-500 transition shadow-sm"
+                className="w-full rounded-xl bg-yellow-400 py-2 text-xs font-extrabold text-zinc-900 hover:bg-yellow-500 transition shadow-sm cursor-pointer"
               >
                 Close Receipt
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirmTx && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-gray-100 animate-in fade-in zoom-in duration-150">
+            <div className="flex items-start gap-3.5 mb-4">
+              <div className="p-3 bg-red-100 text-red-600 rounded-2xl shrink-0">
+                <Icon d={IC.trash} size={22} />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-gray-900">Delete Order Transaction</h3>
+                <p className="text-xs font-semibold text-gray-600 mt-1 leading-relaxed">
+                  Are you sure you want to delete order <span className="font-black text-gray-900">{deleteConfirmTx.token} ({deleteConfirmTx.orderId})</span>? This will permanently remove it from Payments, Reports, and Customer history.
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-gray-50 p-3 text-xs space-y-1 text-gray-700 font-semibold mb-5 border border-gray-100">
+              <div className="flex justify-between">
+                <span className="text-gray-400">Customer:</span>
+                <span>{deleteConfirmTx.customer} ({deleteConfirmTx.phone})</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">Payment Method:</span>
+                <span>{deleteConfirmTx.method}</span>
+              </div>
+              <div className="flex justify-between text-gray-900 font-black pt-1 border-t border-gray-200">
+                <span>Amount:</span>
+                <span>₹{deleteConfirmTx.amount.toFixed(2)}</span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
+              <button
+                onClick={() => setDeleteConfirmTx(null)}
+                disabled={deleting}
+                className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-xs font-extrabold text-gray-700 hover:bg-gray-50 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmDelete}
+                disabled={deleting}
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-red-600 px-4 py-2 text-xs font-extrabold text-white hover:bg-red-700 transition active:scale-95 cursor-pointer shadow-xs disabled:opacity-50"
+              >
+                {deleting ? 'Deleting...' : 'Delete Order'}
               </button>
             </div>
           </div>

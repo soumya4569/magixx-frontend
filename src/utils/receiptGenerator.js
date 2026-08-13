@@ -107,6 +107,15 @@ export const generateThermalReceiptHTML = (orderData = {}, settings = {}) => {
   const orderType = orderData.orderType || orderData.type || 'Dine-in';
   const payMethod = orderData.paymentMethod || orderData.pay || orderData.method || 'Cash';
 
+  const rawCustName = String(orderData.customerName || orderData.customer?.name || orderData.name || '').trim();
+  const rawCustPhone = String(orderData.customerPhone || orderData.customer?.phone || orderData.phone || '').trim();
+
+  const isRealCustName = rawCustName && !/walk-?in|guest|dine-?in|takeaway/i.test(rawCustName);
+  const isRealCustPhone = rawCustPhone && !/n\/?a|none/i.test(rawCustPhone) && rawCustPhone.length >= 7;
+
+  const custNameHtml = isRealCustName ? `<div>Name : ${rawCustName}</div>` : '';
+  const custPhoneHtml = isRealCustPhone ? `<div>Phone : ${rawCustPhone}</div>` : '';
+
   const items = orderData.items || orderData.cart || [];
   const subtotal = Number(orderData.subtotal ?? items.reduce((sum, i) => sum + (Number(i.price || 0) * Number(i.qty || 1)), 0));
   const taxRate = Number(settings.taxRate || orderData.taxRate || 5);
@@ -147,6 +156,8 @@ export const generateThermalReceiptHTML = (orderData = {}, settings = {}) => {
         <div style="word-break: break-all;">Date/time : ${dateTime}</div>
         <div>Type : ${orderType}</div>
         <div>Pay : ${payMethod}</div>
+        ${custNameHtml}
+        ${custPhoneHtml}
         <hr style="${hrStyle}" />
       </div>
 
@@ -262,13 +273,26 @@ export const generateThermalReceiptText = (orderData = {}, settings = {}) => {
     dateTimeLine = `Date: ${rawDateTime}`.slice(0, width);
   }
 
+  const rawCustName = String(orderData.customerName || orderData.customer?.name || orderData.name || '').trim();
+  const rawCustPhone = String(orderData.customerPhone || orderData.customer?.phone || orderData.phone || '').trim();
+
+  const isRealCustName = rawCustName && !/walk-?in|guest|dine-?in|takeaway/i.test(rawCustName);
+  const isRealCustPhone = rawCustPhone && !/n\/?a|none/i.test(rawCustPhone) && rawCustPhone.length >= 7;
+
   const orderInfoLines = [
     `Invoice No : ${invoiceNo}`.slice(0, width),
     dateTimeLine,
     `Type : ${orderType}`.slice(0, width),
     `Pay : ${payMethod}`.slice(0, width),
-    divider,
   ];
+
+  if (isRealCustName) {
+    orderInfoLines.push(`Name : ${rawCustName}`.slice(0, width));
+  }
+  if (isRealCustPhone) {
+    orderInfoLines.push(`Phone : ${rawCustPhone}`.slice(0, width));
+  }
+  orderInfoLines.push(divider);
 
   const itemHeaderLines = [
     'Item Name',

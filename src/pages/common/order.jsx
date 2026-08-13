@@ -1191,19 +1191,6 @@ const Order = () => {
     const billDate = now.toLocaleDateString('en-GB')
     const billTime = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
 
-    const billReceiptText = generateThermalReceiptHTML({
-      tokenNumber: activeToken,
-      dateTime: `${billDate} ${billTime}`,
-      orderType: activeOrderType || 'Dine-in',
-      paymentMethod: normalizedMethod,
-      items: cart || [],
-      subtotal,
-      taxRate: parseFloat(billingSettings.taxRate || '5.00'),
-      cgstAmount,
-      sgstAmount,
-      total,
-    }, billingSettings)
-
     try {
       let customerId = null
       if (!isAggregatorOrder && phone && phone.length >= 10) {
@@ -1243,13 +1230,34 @@ const Order = () => {
       const orderRes = await api.post('/orders', orderPayload)
       const orderData = orderRes.data
 
+      const realTokenNumber = orderData.tokenNumber || activeToken
+      const realInvoiceNo = orderData.tokenNumber ? `ORD-${orderData.tokenNumber}` : (orderData._id ? `ORD-${String(orderData._id).slice(-6).toUpperCase()}` : `ORD-${activeToken}`)
+
+      const billReceiptText = generateThermalReceiptHTML({
+        tokenNumber: realTokenNumber,
+        invoiceNo: realInvoiceNo,
+        dateTime: `${billDate} ${billTime}`,
+        orderType: activeOrderType || 'Dine-in',
+        paymentMethod: normalizedMethod,
+        customerName: name,
+        customerPhone: phone,
+        items: cart || [],
+        subtotal,
+        taxRate: parseFloat(billingSettings.taxRate || '5.00'),
+        cgstAmount,
+        sgstAmount,
+        total,
+      }, billingSettings)
+
       const billDoc = {
         type: 'BILL',
-        orderId: orderData._id ? `ORD-${String(orderData._id).slice(-6).toUpperCase()}` : tempOrderId,
-        tokenNumber: orderData.tokenNumber || activeToken,
+        orderId: realInvoiceNo,
+        tokenNumber: realTokenNumber,
         items: (cart || []).map((c) => ({ name: c.name, qty: c.qty, price: c.price })),
         subtotal: Number(subtotal || 0),
         taxAmount: Number(taxAmount || 0),
+        cgstAmount,
+        sgstAmount,
         total: Number(total || 0),
         paymentMethod: normalizedMethod,
         customerName: name,

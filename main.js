@@ -71,11 +71,12 @@ ipcMain.handle('print-receipt', async (event, { printerName, textContent, htmlCo
   <style>
     @page { margin: 0; size: 58mm auto; }
     html, body {
-      margin: 0;
+      margin: 0 auto;
       padding: 0;
       background: #fff;
       color: #000;
-      width: 58mm;
+      width: 48mm;
+      max-width: 48mm;
     }
   </style>
 </head>
@@ -97,10 +98,10 @@ ipcMain.handle('print-receipt', async (event, { printerName, textContent, htmlCo
     @page { margin: 0; size: 58mm auto; }
     html, body {
       font-family: 'Courier New', Courier, monospace;
-      font-size: 11px;
+      font-size: 9.5px;
       line-height: 1.2;
-      width: 50mm;
-      max-width: 50mm;
+      width: 48mm;
+      max-width: 48mm;
       margin: 0 auto;
       padding: 2px 0;
       white-space: pre-wrap;

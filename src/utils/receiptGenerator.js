@@ -94,8 +94,8 @@ export const formatTotalRow = (label, value, width = 28) => {
  * Generate 58mm Thermal HTML Receipt Layout strictly constrained to 48mm printable width.
  */
 export const generateThermalReceiptHTML = (orderData = {}, settings = {}) => {
-  const storeName = settings.storeName || orderData.storeName || 'Magixx Sweets & Cafe';
-  let rawAddress = settings.address || orderData.address || 'Opposite of Kalyan Mandap, Joda, - 756121';
+  const storeName = settings.storeName || orderData.storeName || 'MAGIXX SWEETS & CAFE';
+  let rawAddress = settings.invoiceHeader || settings.address || orderData.address || 'Opposite KalyanMandap, Joda - 758034';
   if (!/^address:/i.test(rawAddress.trim())) {
     rawAddress = `Address: ${rawAddress.trim()}`;
   }
@@ -122,6 +122,9 @@ export const generateThermalReceiptHTML = (orderData = {}, settings = {}) => {
     return Number.isInteger(num) ? String(num) : num.toFixed(2);
   };
 
+  const rawFooter = settings.invoiceFooter || settings.footerNotes || settings.receiptFooter || orderData.invoiceFooter || 'HAVE A SWEET DAY • VISIT AGAIN';
+  const footerLines = String(rawFooter).trim().split(/[\n\r•|]+/).map(s => s.trim()).filter(Boolean);
+
   const hrStyle = "border: none; border-top: 1px dashed #000; margin: 3px 0; padding: 0;";
 
   return `
@@ -131,19 +134,19 @@ export const generateThermalReceiptHTML = (orderData = {}, settings = {}) => {
       <div style="text-align: center;">
         <div style="font-weight: bold; font-size: 11px; text-transform: uppercase;">${storeName}</div>
         <div style="font-size: 9px; word-break: break-word;">${rawAddress}</div>
-        <div style="font-size: 9px;">GSTIN - ${gstinVal}</div>
-        <div style="font-size: 9px;">Phone - ${phoneVal}</div>
+        <div style="font-size: 9px;">GSTIN : ${gstinVal}</div>
+        <div style="font-size: 9px;">Phone : ${phoneVal}</div>
         <hr style="${hrStyle}" />
         <div style="font-weight: bold; font-size: 11px; letter-spacing: 1px;">INVOICE</div>
         <hr style="${hrStyle}" />
       </div>
 
-      <!-- 2. Order Information (Left-Aligned) -->
+      <!-- 2. Order Information (Left-Aligned with ':' Separators) -->
       <div style="text-align: left; font-size: 9.5px;">
-        <div>Invoice No - ${invoiceNo}</div>
-        <div style="word-break: break-all;">Date/time - ${dateTime}</div>
-        <div>Type - ${orderType}</div>
-        <div>Pay - ${payMethod}</div>
+        <div>Invoice No : ${invoiceNo}</div>
+        <div style="word-break: break-all;">Date/time : ${dateTime}</div>
+        <div>Type : ${orderType}</div>
+        <div>Pay : ${payMethod}</div>
         <hr style="${hrStyle}" />
       </div>
 
@@ -213,10 +216,9 @@ export const generateThermalReceiptHTML = (orderData = {}, settings = {}) => {
       </table>
       <hr style="${hrStyle}" />
 
-      <!-- 5. Footer Section (Centered) -->
+      <!-- 5. Footer Section (Centered Dynamic Settings Message) -->
       <div style="text-align: center; font-size: 9.5px; padding-top: 3px;">
-        <div>Have a Sweet Day</div>
-        <div>Visit Again.</div>
+        ${footerLines.map(line => `<div>${line}</div>`).join('')}
       </div>
     </div>
   `;
@@ -229,16 +231,16 @@ export const generateThermalReceiptText = (orderData = {}, settings = {}) => {
   const width = 28;
   const divider = '-'.repeat(width);
 
-  const storeName = settings.storeName || orderData.storeName || 'Magixx Sweets & Cafe';
-  let rawAddress = settings.address || orderData.address || 'Opposite of Kalyan Mandap, Joda, - 756121';
+  const storeName = settings.storeName || orderData.storeName || 'MAGIXX SWEETS & CAFE';
+  let rawAddress = settings.invoiceHeader || settings.address || orderData.address || 'Opposite KalyanMandap, Joda - 758034';
   if (!/^address:/i.test(rawAddress.trim())) {
     rawAddress = `Address: ${rawAddress.trim()}`;
   }
   const gstinVal = settings.gstin || orderData.gstin || '21ATDPK9131G1Z1';
   const phoneVal = settings.phone || orderData.phone || '7001322855';
 
-  const gstinText = `GSTIN - ${gstinVal}`;
-  const phoneText = `Phone - ${phoneVal}`;
+  const gstinText = `GSTIN : ${gstinVal}`;
+  const phoneText = `Phone : ${phoneVal}`;
 
   const headerLines = [
     ...wrapAndCenterText(storeName, width),
@@ -255,16 +257,16 @@ export const generateThermalReceiptText = (orderData = {}, settings = {}) => {
   const orderType = orderData.orderType || orderData.type || 'Dine-in';
   const payMethod = orderData.paymentMethod || orderData.pay || orderData.method || 'Cash';
 
-  let dateTimeLine = `Date/time - ${rawDateTime}`;
+  let dateTimeLine = `Date/time : ${rawDateTime}`;
   if (dateTimeLine.length > width) {
     dateTimeLine = `Date: ${rawDateTime}`.slice(0, width);
   }
 
   const orderInfoLines = [
-    `Invoice No - ${invoiceNo}`.slice(0, width),
+    `Invoice No : ${invoiceNo}`.slice(0, width),
     dateTimeLine,
-    `Type - ${orderType}`.slice(0, width),
-    `Pay - ${payMethod}`.slice(0, width),
+    `Type : ${orderType}`.slice(0, width),
+    `Pay : ${payMethod}`.slice(0, width),
     divider,
   ];
 
@@ -326,10 +328,8 @@ export const generateThermalReceiptText = (orderData = {}, settings = {}) => {
     divider,
   ];
 
-  const footerLines = [
-    centerText('Have a Sweet Day', width),
-    centerText('Visit Again.', width),
-  ];
+  const rawFooter = settings.invoiceFooter || settings.footerNotes || settings.receiptFooter || orderData.invoiceFooter || 'HAVE A SWEET DAY • VISIT AGAIN';
+  const footerLinesText = String(rawFooter).trim().split(/[\n\r•|]+/).flatMap(line => wrapAndCenterText(line.trim(), width));
 
   return [
     ...headerLines,
@@ -337,6 +337,6 @@ export const generateThermalReceiptText = (orderData = {}, settings = {}) => {
     ...itemHeaderLines,
     ...itemDataLines,
     ...totalsLines,
-    ...footerLines,
+    ...footerLinesText,
   ].join('\n');
 };
